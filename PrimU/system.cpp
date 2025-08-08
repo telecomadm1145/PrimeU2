@@ -217,7 +217,7 @@ uint32_t __wfopen(Arguments* args)
 			if (f) mode = m2;
 		}
 	}
-	if (!f) 
+	if (!f)
 		return 0;
 
 	std::lock_guard<std::mutex> lk(g_vfile_mutex);
@@ -521,6 +521,148 @@ uint32_t _GetPrivateProfileString(Arguments* args)
 		return 0;
 	}
 }
+// ====== 简单的 INI 写入 (_SetPrivateProfileString) ======
+// signature follows Windows API: WritePrivateProfileString(lpAppName, lpKeyName, lpString, lpFileName)
+// We map this to: (r0=appName, r1=keyName, r2=stringToWrite, r3=filenamePtr)
+uint32_t _SetPrivateProfileString(Arguments* args)
+{
+	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
+
+	// 1. Parse arguments based on the standard WritePrivateProfileString signature
+	const char* appName = __GET(char*, args->r0);
+	const char* keyName = __GET(char*, args->r1);
+	const char* stringToWrite = __GET(char*, args->r2);
+	const char* filename = __GET(char*, args->r3);
+
+	std::string hostPath = filename ? MapVMPathToHost(filename) : std::string();
+
+	printf("    +appname: %s\n    +keyName: %s\n    +string: %s\n    +VM filename: %s\n    +Mapped host path: %s\n",
+		appName ? appName : "(null)",
+		keyName ? keyName : "(null)",
+		stringToWrite ? stringToWrite : "(null)",
+		filename ? filename : "(null)",
+		hostPath.c_str()
+	);
+
+	// Essential parameters validation
+	if (hostPath.empty() || !appName) {
+		return 0; // Failure (FALSE)
+	}
+
+	try {
+		std::vector<std::string> lines;
+		std::ifstream inFile(hostPath);
+		if (inFile.is_open()) {
+			std::string line;
+			while (std::getline(inFile, line)) {
+				// Handle Windows-style \r\n line endings
+				if (!line.empty() && line.back() == '\r') {
+					line.pop_back();
+				}
+				lines.push_back(line);
+			}
+			inFile.close();
+		}
+
+		// Find the target section and key
+		int sectionStartLine = -1;
+		int keyLine = -1;
+		int sectionEndLine = -1; // Line after the last key of the section
+		bool inSection = false;
+
+		for (int i = 0; i < lines.size(); ++i) {
+			std::string trimmedLine = lines[i];
+			//trim(trimmedLine);
+
+			if (trimmedLine.empty() || trimmedLine[0] == ';' || trimmedLine[0] == '#') {
+				continue;
+			}
+
+			if (trimmedLine.front() == '[' && trimmedLine.back() == ']') {
+				std::string currentSection = trimmedLine.substr(1, trimmedLine.length() - 2);
+				//trim(currentSection);
+				if (inSection) { // We were in the target section, and now we've hit a new one
+					sectionEndLine = i;
+					inSection = false;
+				}
+				if (currentSection == appName) {
+					sectionStartLine = i;
+					inSection = true;
+				}
+			}
+			else if (inSection && keyName) {
+				size_t equalsPos = trimmedLine.find('=');
+				if (equalsPos != std::string::npos) {
+					std::string currentKey = trimmedLine.substr(0, equalsPos);
+					//trim(currentKey);
+					if (currentKey == keyName) {
+						keyLine = i;
+					}
+				}
+			}
+		}
+		if (inSection) { // If the file ends while in the target section
+			sectionEndLine = lines.size();
+		}
+
+
+		// 2. Perform modification in memory
+		// Case 1: Delete an entire section (keyName and stringToWrite are NULL)
+		if (!keyName && !stringToWrite) {
+			if (sectionStartLine != -1) {
+				lines.erase(lines.begin() + sectionStartLine, lines.begin() + sectionEndLine);
+			}
+		}
+		// Case 2: Delete a key (stringToWrite is NULL)
+		else if (keyName && !stringToWrite) {
+			if (keyLine != -1) {
+				lines.erase(lines.begin() + keyLine);
+			}
+		}
+		// Case 3: Update or Add a key/value pair
+		else if (keyName && stringToWrite) {
+			std::string newPair = std::string(keyName) + "=" + std::string(stringToWrite);
+			if (keyLine != -1) {
+				// Update existing key
+				lines[keyLine] = newPair;
+			}
+			else if (sectionStartLine != -1) {
+				// Add new key to existing section
+				lines.insert(lines.begin() + sectionEndLine, newPair);
+			}
+			else {
+				// Add new section and new key
+				if (!lines.empty() && !lines.back().empty()) {
+					lines.push_back(""); // Add a blank line for separation
+				}
+				lines.push_back("[" + std::string(appName) + "]");
+				lines.push_back(newPair);
+			}
+		}
+		else {
+			// Invalid combination of parameters (e.g., keyName is NULL but stringToWrite is not)
+			return 0; // Failure
+		}
+
+		// 3. Write the modified content back to the file
+		std::ofstream outFile(hostPath, std::ios::binary | std::ios::trunc);
+		if (!outFile.is_open()) {
+			return 0; // Failure
+		}
+
+		for (size_t i = 0; i < lines.size(); ++i) {
+			outFile << lines[i];
+			// Write standard CRLF line endings for compatibility
+			outFile << "\r\n";
+		}
+		outFile.close();
+
+		return 1; // Success (TRUE)
+	}
+	catch (...) {
+		return 0; // Failure
+	}
+}
 
 #define DUMPARGS printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", \
     args->r0, args->r0, args->r1, args->r1, args->r2,\
@@ -548,16 +690,22 @@ uint32_t getCurrentDir(Arguments*) {
 
 uint32_t _FindResourceW(Arguments* args)
 {
+	// TODO
+	printf("Warn: FindResourceW stub!!!\n");
 	return 0;
 }
 
 uint32_t _LoadLibraryA(Arguments* args)
 {
+	// TODO
+	printf("Warn: LoadLibraryA stub!!!\n");
 	return 0;
 }
 
 uint32_t _FreeLibrary(Arguments* args)
 {
+	// TODO
+	printf("Warn: FreeLibrary stub!!!\n");
 	return 0;
 }
 
@@ -629,14 +777,14 @@ uint32_t LCDOn(Arguments* args)
 
 uint32_t lcalloc(Arguments* args)
 {
-	printf("    +nElements: %i | size: %i\n", args->r0, args->r1);
+	//	printf("    +nElements: %i | size: %i\n", args->r0, args->r1);
 
 	//uint32_t virt_addr = sExecutor->alloc_dynamic_mem(r0*r1);
 	//auto addr = sExecutor->get_from_memory<void>(virt_addr);
 	//memset(addr, 0, r0*r1);
 
 	VirtPtr addr;
-	if (sMemoryManager->DyanmicAlloc(&addr, args->r0) == ERROR_OK)
+	if (sMemoryManager->DyanmicAlloc(&addr, args->r0 * args->r1) == ERROR_OK)
 		return addr;
 
 	return 0;
@@ -644,7 +792,7 @@ uint32_t lcalloc(Arguments* args)
 
 uint32_t lmalloc(Arguments* args)
 {
-	printf("    +size: %i\n", args->r0);
+	// printf("    +size: %i\n", args->r0);
 
 	VirtPtr addr;
 	if (sMemoryManager->DyanmicAlloc(&addr, args->r0) == ERROR_OK)
@@ -663,9 +811,9 @@ uint32_t lrealloc(Arguments* args)
 		return ptr;
 	}
 
-	printf("    +addr: %08X, size: %X", ptr, new_size);
+	// printf("    +addr: %08X, size: %X\n", ptr, new_size);
 	sMemoryManager->DynamicRealloc(&ptr, static_cast<size_t>(new_size));
-	printf("    +new_addr: %08X", ptr);
+	// printf("    +new_addr: %08X\n", ptr);
 	return ptr;
 }
 
@@ -722,9 +870,6 @@ uint32_t GetSysTime(Arguments* args)
 	return args->r0;
 }
 
-uint32_t _SetPrivateProfileString(Arguments* args) {
-	return 0; // Not implemented
-}
 // append-write: _fwrite(handle, srcVirtPtr, size) -> bytes written (append to file end)
 uint32_t _fwrite(Arguments* args)
 {
@@ -1257,4 +1402,143 @@ uint32_t _findclose(Arguments* args) {
 	VirtPtr ctx_vptr = args->r0;
 	if (!ctx_vptr) return (uint32_t)-1;
 	return find_close_internal(ctx_vptr);
+}
+
+uint32_t GetEvent(Arguments* args)
+{
+	// TODO: This is a stub function, as the original code does not provide a full implementation.
+	// printf("Warn: GetEvent stub!!!\n");
+	return 0; // Idk
+}
+
+/**
+ * @brief Deletes a file specified by an ASCII/UTF-8 path.
+ * @param args r0 contains a virtual pointer to the null-terminated path string.
+ * @return 0 on success, non-zero on failure.
+ */
+uint32_t _aremove(Arguments* args)
+{
+	// 1. Get the virtual path from arguments.
+	const char* vmPath = __GET(char*, args->r0);
+	if (!vmPath) {
+		return -1; // Return non-zero for error (invalid argument).
+	}
+
+	// 2. Map the virtual path to a sandboxed host system path.
+	std::string hostPath = MapVMPathToHost(vmPath);
+
+	printf("    +_aremove VM path: '%s', Mapped host path: '%s'\n", vmPath, hostPath.c_str());
+
+	try {
+		std::error_code ec;
+		// 3. Attempt to remove the file or empty directory.
+		fs::remove(hostPath, ec);
+
+		// 4. Check for errors. fs::remove sets ec on failure.
+		if (ec) {
+			printf("    +_aremove failed: %s\n", ec.message().c_str());
+			return -1; // Failure.
+		}
+
+		return 0; // Success.
+	}
+	catch (const fs::filesystem_error& e) {
+		// Catch potential exceptions from filesystem operations.
+		printf("    +_aremove exception: %s\n", e.what());
+		return -1; // Failure.
+	}
+}
+
+/**
+ * @brief Deletes a file specified by a wide-character (UTF-16) path.
+ * @param args r0 contains a virtual pointer to the null-terminated wide-character path string.
+ * @return 0 on success, non-zero on failure.
+ */
+uint32_t _wremove(Arguments* args)
+{
+	// 1. Get the virtual path from arguments.
+	const wchar_t* wVmPath = __GET(wchar_t*, args->r0);
+	if (!wVmPath) {
+		return -1; // Return non-zero for error.
+	}
+
+	// 2. Map the wide-character virtual path to a sandboxed host system path.
+	std::string hostPath = MapVMPathToHostW(wVmPath);
+
+	// For logging purposes, convert the wide string to a printable UTF-8 string.
+	printf("    +_wremove Mapped host path: '%s'\n", hostPath.c_str());
+
+	try {
+		std::error_code ec;
+		// 3. Attempt to remove the file or empty directory.
+		fs::remove(hostPath, ec);
+
+		// 4. Check for errors.
+		if (ec) {
+			printf("    +_wremove failed: %s\n", ec.message().c_str());
+			return -1; // Failure.
+		}
+
+		return 0; // Success.
+	}
+	catch (const fs::filesystem_error& e) {
+		// Catch potential exceptions.
+		printf("    +_wremove exception: %s\n", e.what());
+		return -1; // Failure.
+	}
+}
+static std::unordered_map<uint32_t, std::string> g_vdev_table;
+static uint32_t g_next_dev_handle = 1; // 0 保留为失败/无效
+uint32_t CreateFile(Arguments* args) {
+	std::cout << "    +CreateFile_stub name:" << __GET(char*, args->r0) << "\n";
+	g_vdev_table[++g_next_dev_handle] = __GET(char*, args->r0); // Store the device name in the map
+	return g_next_dev_handle;
+}
+// 辅助函数：Hex dump
+static void HexDump(const void* data, size_t size) {
+	const uint8_t* p = reinterpret_cast<const uint8_t*>(data);
+	for (size_t i = 0; i < size; i += 16) {
+		std::cout << std::setw(4) << std::setfill('0') << std::hex << i << "  ";
+		for (size_t j = 0; j < 16 && i + j < size; ++j) {
+			std::cout << std::setw(2) << static_cast<int>(p[i + j]) << " ";
+		}
+		std::cout << " ";
+		for (size_t j = 0; j < 16 && i + j < size; ++j) {
+			char c = static_cast<char>(p[i + j]);
+			std::cout << (std::isprint(static_cast<unsigned char>(c)) ? c : '.');
+		}
+		std::cout << "\n";
+	}
+	std::cout << std::dec; // 恢复默认输出格式
+}
+
+uint32_t DeviceIoControl(Arguments* args) {
+	uint32_t handle = args->r0;
+	uint32_t request = args->r1;
+	char* in = __GET(char*, args->r2);
+	uint32_t size = args->r3;
+	char* out = __GET(char*, *__GET(uint32_t*, args->sp + 8));
+	int outlen = *__GET(int*, args->sp + 12);
+	uint32_t* retlen = __GET(uint32_t*,*__GET(int*, args->sp + 16));
+	void* overlapped = __GET(void*, *__GET(int*, args->sp + 20));
+
+	std::cout << "    +DeviceIoControl_stub handle:" << handle
+		<< " request:" << request
+		<< " size:" << size << "\n";
+
+	// 打印 ioctl 缓冲区内容
+	std::cout << "    ioctl buffer dump:\n";
+	HexDump(in, size);
+	return 1; // Simulate success
+}
+uint32_t CloseHandle(Arguments* args) {
+	uint32_t handle = args->r0;
+	if (handle == 0) return 0; // Invalid handle
+	std::cout << "    +CloseHandle_stub handle:" << handle << "\n";
+	auto it = g_vdev_table.find(handle);
+	if (it != g_vdev_table.end()) {
+		g_vdev_table.erase(it); // Remove the device from the map
+		return 1; // Success
+	}
+	return 0; // Failure, handle not found
 }

@@ -47,7 +47,7 @@ struct LCD // BLIGLCD
     uint32_t buffer[320 * 240 * 3];
 
     LCD();
-    ~LCD() { }
+    ~LCD();
 };
 
 #pragma pack(pop)

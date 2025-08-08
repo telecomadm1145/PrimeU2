@@ -72,7 +72,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_CheckPenEvent, HANDLE_NAMEONLY, "CheckPenEvent", nullptr);
 	REGISTER_HANDLER(SDKLIB_ClearPenEvent, HANDLE_NAMEONLY, "ClearPenEvent", nullptr);
 	REGISTER_HANDLER(SDKLIB_PutSystemEvent, HANDLE_NAMEONLY, "PutSystemEvent", nullptr);
-	REGISTER_HANDLER(SDKLIB_GetEvent, HANDLE_NAMEONLY, "GetEvent", nullptr);
+	REGISTER_HANDLER(SDKLIB_GetEvent, HANDLE_NAMEONLY, "GetEvent", GetEvent);
 	REGISTER_HANDLER(SDKLIB_GetPendEvent, HANDLE_NAMEONLY, "GetPendEvent", nullptr);
 	REGISTER_HANDLER(SDKLIB_SetEventType, HANDLE_NAMEONLY, "SetEventType", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetEventType, HANDLE_NAMEONLY, "GetEventType", nullptr);
@@ -230,7 +230,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__findclose, HANDLE_NAMEONLY, "_findclose", _findclose);
 	REGISTER_HANDLER(SDKLIB__afgetattr, HANDLE_NAMEONLY, "_afgetattr", nullptr);
 	REGISTER_HANDLER(SDKLIB__afsetattr, HANDLE_NAMEONLY, "_afsetattr", nullptr);
-	REGISTER_HANDLER(SDKLIB__aremove, HANDLE_NAMEONLY, "_aremove", nullptr);
+	REGISTER_HANDLER(SDKLIB__aremove, HANDLE_NAMEONLY, "_aremove", _aremove);
 	REGISTER_HANDLER(SDKLIB__arename, HANDLE_NAMEONLY, "_arename", nullptr);
 	REGISTER_HANDLER(SDKLIB__afcopy, HANDLE_NAMEONLY, "_afcopy", nullptr);
 	REGISTER_HANDLER(SDKLIB__amkdir, HANDLE_IMPLEMENTED, "_amkdir", _amkdir);
@@ -283,7 +283,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__GetTempPath, HANDLE_NAMEONLY, "_GetTempPath", nullptr);
 	REGISTER_HANDLER(SDKLIB__GetPrivateProfileInt, HANDLE_NAMEONLY, "_GetPrivateProfileInt", nullptr);
 	REGISTER_HANDLER(SDKLIB__GetPrivateProfileString, HANDLE_IMPLEMENTED, "_GetPrivateProfileString", _GetPrivateProfileString);
-	REGISTER_HANDLER(SDKLIB__WritePrivateProfileString, HANDLE_NAMEONLY, "_WritePrivateProfileString", nullptr);
+	REGISTER_HANDLER(SDKLIB__WritePrivateProfileString, HANDLE_NAMEONLY, "_WritePrivateProfileString", _SetPrivateProfileString);
 	REGISTER_HANDLER(SDKLIB_GetTadCityNo, HANDLE_NAMEONLY, "GetTadCityNo", nullptr);
 	REGISTER_HANDLER(SDKLIB_RunApplicationA, HANDLE_NAMEONLY, "RunApplicationA", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetApplicationNameA, HANDLE_NAMEONLY, "GetApplicationNameA", nullptr);
@@ -637,7 +637,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__wfindnext, HANDLE_NAMEONLY, "_wfindnext", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfgetattr, HANDLE_NAMEONLY, "_wfgetattr", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfsetattr, HANDLE_NAMEONLY, "_wfsetattr", nullptr);
-	REGISTER_HANDLER(SDKLIB___wremove, HANDLE_NAMEONLY, "__wremove", nullptr);
+	REGISTER_HANDLER(SDKLIB___wremove, HANDLE_NAMEONLY, "__wremove", _wremove);
 	REGISTER_HANDLER(SDKLIB__wrename, HANDLE_NAMEONLY, "_wrename", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfcopy, HANDLE_NAMEONLY, "_wfcopy", nullptr);
 	REGISTER_HANDLER(SDKLIB__wmkdir, HANDLE_NAMEONLY, "_wmkdir", nullptr);
@@ -688,13 +688,13 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_GetResourceCfg, HANDLE_NAMEONLY, "GetResourceCfg", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetSystemDefaultLangID, HANDLE_NAMEONLY, "GetSystemDefaultLangID", nullptr);
 	REGISTER_HANDLER(SDKLIB_SetSystemDefaultLangID, HANDLE_NAMEONLY, "SetSystemDefaultLangID", nullptr);
-	REGISTER_HANDLER(SDKLIB_CreateFile, HANDLE_NAMEONLY, "CreateFile", nullptr);
+	REGISTER_HANDLER(SDKLIB_CreateFile, HANDLE_NAMEONLY, "CreateFile", CreateFile);
 	REGISTER_HANDLER(SDKLIB_DeleteFile, HANDLE_NAMEONLY, "DeleteFile", nullptr);
 	REGISTER_HANDLER(SDKLIB_ReadFile, HANDLE_NAMEONLY, "ReadFile", nullptr);
 	REGISTER_HANDLER(SDKLIB_WriteFile, HANDLE_NAMEONLY, "WriteFile", nullptr);
 	REGISTER_HANDLER(SDKLIB_SetFilePointer, HANDLE_NAMEONLY, "SetFilePointer", nullptr);
-	REGISTER_HANDLER(SDKLIB_DeviceIoControl, HANDLE_NAMEONLY, "DeviceIoControl", nullptr);
-	REGISTER_HANDLER(SDKLIB_CloseHandle, HANDLE_NAMEONLY, "CloseHandle", nullptr);
+	REGISTER_HANDLER(SDKLIB_DeviceIoControl, HANDLE_NAMEONLY, "DeviceIoControl", DeviceIoControl);
+	REGISTER_HANDLER(SDKLIB_CloseHandle, HANDLE_NAMEONLY, "CloseHandle", CloseHandle);
 	REGISTER_HANDLER(SDKLIB_DictLastWord, HANDLE_NAMEONLY, "DictLastWord", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetTransBuffer, HANDLE_NAMEONLY, "GetTransBuffer", nullptr);
 	REGISTER_HANDLER(SDKLIB_DictIsYuanYinPhonetic, HANDLE_NAMEONLY, "DictIsYuanYinPhonetic", nullptr);
@@ -769,11 +769,11 @@ uint32_t SystemAPI::Call(InterruptID id, Arguments args)
 		auto _handle = _handler->second;
 
 		if (_handle->Callback) {
-			printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
-			printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", args.r0, args.r0, args.r1,
-				args.r1, args.r2, args.r2, args.r3, args.r3, args.r4, args.r4, args.sp);
+			//printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
+			//printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", args.r0, args.r0, args.r1,
+			//	args.r1, args.r2, args.r2, args.r3, args.r3, args.r4, args.r4, args.sp);
 			auto ret = _handle->Callback(&args);
-			printf("    result: %08X|%i\n", ret, ret);
+			//printf("    result: %08X|%i\n", ret, ret);
 			return ret;
 		}
 		else {

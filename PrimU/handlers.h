@@ -47,6 +47,8 @@ uint32_t OSSleep(Arguments* args);
 
 uint32_t _GetPrivateProfileString(Arguments* args);
 
+uint32_t _SetPrivateProfileString(Arguments* args);
+
 
 uint32_t _afindfirst(Arguments* args);
 #undef _wfindfirst
@@ -57,3 +59,15 @@ uint32_t _afindnext(Arguments* args);
 uint32_t _wfindnext(Arguments* args);
 
 uint32_t _findclose(Arguments* args);
+
+uint32_t GetEvent(Arguments* args);
+
+uint32_t _aremove(Arguments* args);
+
+uint32_t _wremove(Arguments* args);
+
+uint32_t CreateFile(Arguments* args);
+
+uint32_t DeviceIoControl(Arguments* args);
+
+uint32_t CloseHandle(Arguments* args);
