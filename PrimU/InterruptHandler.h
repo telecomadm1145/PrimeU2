@@ -51,11 +51,11 @@ typedef uint32_t(*Handler)(Arguments* args);
 
 struct InterruptHandler
 {
-    InterruptHandler(InterruptID id, HandleStatus status, Handler callback, char* name) : Id(id), Status(status), Callback(callback), Name(name) { }
+    InterruptHandler(InterruptID id, HandleStatus status, Handler callback, const char* name) : Id(id), Status(status), Callback(callback), Name(name) { }
     InterruptID Id;
     HandleStatus Status;
     Handler Callback;
-    char* Name;
+    const char* Name;
 };
 
 #endif

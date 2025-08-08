@@ -16,6 +16,14 @@ uint32_t _LoadLibraryA(Arguments* args);
 uint32_t _FreeLibrary(Arguments* args); 
 uint32_t GetSysTime(Arguments* args);
 
+uint32_t _fwrite(Arguments* args);
+
+uint32_t _fclose(Arguments* args);
+
+uint32_t _filesize(Arguments* args);
+
+uint32_t _fread(Arguments* args);
+
 uint32_t OSSetEvent(Arguments* args);
 uint32_t OSCreateEvent(Arguments* args);
 uint32_t LCDOn(Arguments* args);
@@ -38,3 +46,14 @@ uint32_t OSLeaveCriticalSection(Arguments* args);
 uint32_t OSSleep(Arguments* args); 
 
 uint32_t _GetPrivateProfileString(Arguments* args);
+
+
+uint32_t _afindfirst(Arguments* args);
+#undef _wfindfirst
+uint32_t _wfindfirst(Arguments* args);
+
+uint32_t _afindnext(Arguments* args);
+#undef _wfindnext
+uint32_t _wfindnext(Arguments* args);
+
+uint32_t _findclose(Arguments* args);
