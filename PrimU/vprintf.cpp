@@ -72,8 +72,8 @@ SUCH DAMAGE.
 
 #define is_digit(c) ((c) >= '0' && (c) <= '9')
 
-static char *lower_digits = "0123456789abcdefghijklmnopqrstuvwxyz";
-static char *upper_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static const char *lower_digits = "0123456789abcdefghijklmnopqrstuvwxyz";
+static const char *upper_digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 
 static int ee_skip_atoi(const char **s)
@@ -86,7 +86,7 @@ static int ee_skip_atoi(const char **s)
 static void ee_number(long num, int base, int size, int precision, int type)
 {
     char c, sign, tmp[66];
-    char *dig = lower_digits;
+    const char *dig = lower_digits;
     int i;
 
     if (type & UPPERCASE)  dig = upper_digits;
@@ -161,7 +161,7 @@ static void ee_number(long num, int base, int size, int precision, int type)
 static void eaddr(unsigned char *addr, int size, int precision, int type)
 {
     char tmp[24];
-    char *dig = lower_digits;
+    const char *dig = lower_digits;
     int i, len;
 
     if (type & UPPERCASE)  dig = upper_digits;
@@ -435,7 +435,7 @@ void ee_vsprintf(const char *fmt, va_list args)
     int len;
     unsigned long num;
     int i, base;
-    char *s;
+    const char *s;
 
     int flags;            // Flags to number()
 
