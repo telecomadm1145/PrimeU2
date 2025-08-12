@@ -26,6 +26,10 @@ uint32_t _fread(SystemServiceArguments* args);
 
 uint32_t OSSetEvent(SystemServiceArguments* args);
 uint32_t OSCreateEvent(SystemServiceArguments* args);
+uint32_t OSWaitForEvent(SystemServiceArguments* args);
+uint32_t OSSuspendThread(SystemServiceArguments* args);
+uint32_t OSResumeThread(SystemServiceArguments* args);
+uint32_t SysPowerOff(SystemServiceArguments* args);
 uint32_t LCDOn(SystemServiceArguments* args);
 uint32_t GetActiveLCD(SystemServiceArguments* args);
 

@@ -37,8 +37,6 @@ std::map<int, int> vk_to_device_keymap = {
 	{ VK_RETURN,       0x0D }, // 回车
 	{ VK_SPACE,        0x20 }, // 空格
 	{ VK_SHIFT,        0x8B }, // Shift
-	{ 'N',             0x95 }, // 帮助
-	{ 'M',             0xB1 }, // 应用
 
 	// === 数字与符号键 ===
 	{ '0',             0x30 }, // 0
@@ -82,6 +80,8 @@ std::map<int, int> vk_to_device_keymap = {
 	{ 'Z',             0xB4 }, // 视图
 	{ 'C',             0xB5 }, // CAS
 	{ 'V',             0xB6 }, // Alpha
+	{ 'N',             0x95 }, // 帮助
+	{ 'M',             0xB1 }, // 应用
 };
 
 // --- LCDHandler Implementation (from your code) ---

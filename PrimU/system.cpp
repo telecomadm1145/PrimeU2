@@ -750,6 +750,8 @@ struct EVENT
 	uint8_t unk11;
 };
 
+
+// TODO
 uint32_t OSCreateEvent(SystemServiceArguments* args)
 {
 	VirtPtr allocAddr;
@@ -762,16 +764,34 @@ uint32_t OSCreateEvent(SystemServiceArguments* args)
 
 	return allocAddr;
 }
+uint32_t OSWaitForEvent(SystemServiceArguments* args) {
+	return 0;
+}
+uint32_t OSSuspendThread(SystemServiceArguments* args) {
+	// r0: thread id
+	return  0;
+}
+uint32_t OSResumeThread(SystemServiceArguments* args) {
+	// r0: thread id
+	return 0;
+}
+extern "C" uint32_t ExitProcess(uint32_t);
 
-uint32_t OSSetEvent(SystemServiceArguments* args)
-{
-	DUMPARGS;
+uint32_t SysPowerOff(SystemServiceArguments* args) {
+	ExitProcess(0);
 	return 0;
 }
 
+uint32_t OSSetEvent(SystemServiceArguments* args)
+{
+	printf("OSSetEvent!\n");
+	// DUMPARGS;
+	return 0;
+}
+// TODO
 uint32_t LCDOn(SystemServiceArguments* args)
 {
-	DUMPARGS;
+	// DUMPARGS;
 	return 0;
 }
 
@@ -1580,6 +1600,10 @@ uint32_t GetEvent(SystemServiceArguments* args)
 		//if (events[0].type == UI_EVENT_TYPE_KEY) {
 		//	event.event_type = UI_EVENT_TYPE_TICK_2;
 		//}
+		if (events.size() > 8) {
+			events.clear();
+			return 0;
+		}
 		event.available_multipress_events = events.size();
 		std::copy(events.begin(), events.end(), event.multipress_events);
 		events.clear();

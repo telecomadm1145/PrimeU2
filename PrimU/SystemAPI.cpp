@@ -13,8 +13,8 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_OSTerminateThread, HANDLE_NAMEONLY, "OSTerminateThread", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSSetThreadPriority, HANDLE_IMPLEMENTED, "OSSetThreadPriority", OSSetThreadPriority);
 	REGISTER_HANDLER(SDKLIB_OSGetThreadPriority, HANDLE_NAMEONLY, "OSGetThreadPriority", nullptr);
-	REGISTER_HANDLER(SDKLIB_OSSuspendThread, HANDLE_NAMEONLY, "OSSuspendThread", nullptr);
-	REGISTER_HANDLER(SDKLIB_OSResumeThread, HANDLE_NAMEONLY, "OSResumeThread", nullptr);
+	REGISTER_HANDLER(SDKLIB_OSSuspendThread, HANDLE_NAMEONLY, "OSSuspendThread", OSSuspendThread);
+	REGISTER_HANDLER(SDKLIB_OSResumeThread, HANDLE_NAMEONLY, "OSResumeThread", OSResumeThread);
 	REGISTER_HANDLER(SDKLIB_OSWakeUpThread, HANDLE_NAMEONLY, "OSWakeUpThread", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSExitThread, HANDLE_NAMEONLY, "OSExitThread", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSSleep, HANDLE_IMPLEMENTED, "OSSleep", OSSleep);
@@ -23,7 +23,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_OSReleaseSemaphore, HANDLE_NAMEONLY, "OSReleaseSemaphore", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSCloseSemaphore, HANDLE_NAMEONLY, "OSCloseSemaphore", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSCreateEvent, HANDLE_IMPLEMENTED, "OSCreateEvent", OSCreateEvent);
-	REGISTER_HANDLER(SDKLIB_OSWaitForEvent, HANDLE_NAMEONLY, "OSWaitForEvent", nullptr);
+	REGISTER_HANDLER(SDKLIB_OSWaitForEvent, HANDLE_NAMEONLY, "OSWaitForEvent", OSWaitForEvent);
 	REGISTER_HANDLER(SDKLIB_OSSetEvent, HANDLE_IMPLEMENTED, "OSSetEvent", OSSetEvent);
 	REGISTER_HANDLER(SDKLIB_OSResetEvent, HANDLE_NAMEONLY, "OSResetEvent", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSCloseEvent, HANDLE_NAMEONLY, "OSCloseEvent", nullptr);
@@ -59,7 +59,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_SetAutoPowerOff, HANDLE_NAMEONLY, "SetAutoPowerOff", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetTimer1IntHandler, HANDLE_NAMEONLY, "GetTimer1IntHandler", nullptr);
 	REGISTER_HANDLER(SDKLIB_RemapMemory, HANDLE_NAMEONLY, "RemapMemory", nullptr);
-	REGISTER_HANDLER(SDKLIB_SysPowerOff, HANDLE_NAMEONLY, "SysPowerOff", nullptr);
+	REGISTER_HANDLER(SDKLIB_SysPowerOff, HANDLE_NAMEONLY, "SysPowerOff", SysPowerOff);
 	REGISTER_HANDLER(SDKLIB_SetSysKeyState, HANDLE_NAMEONLY, "SetSysKeyState", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetSysKeyState, HANDLE_NAMEONLY, "GetSysKeyState", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetBatteryType, HANDLE_NAMEONLY, "GetBatteryType", nullptr);

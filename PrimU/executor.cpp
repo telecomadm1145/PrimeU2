@@ -21,7 +21,6 @@ Executor* Executor::m_instance = nullptr;
 #define DEFINE_INTERRUPT(id, s, n, c) m_interrupts.insert(std::pair<InterruptID, InterruptHandle*>(id, new InterruptHandle(id, s, c, n)))
 
 void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
-size_t counter = 0;
 void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
 	static auto lastUpdate = std::chrono::high_resolution_clock::now();
@@ -29,9 +28,6 @@ void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 	auto now = std::chrono::high_resolution_clock::now();
 	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
 	bool canrun = sThreadHandler->CanCurrentThreadRun();
-	if (counter++ < 8900000) {
-		return;
-	}
 	if (sThreadHandler->yielding) {
 		uc_emu_stop(sExecutor->GetUcInstance());
 		sThreadHandler->SaveCurrentThreadState();
@@ -182,7 +178,7 @@ bool Executor::InitInterrupts()
 {
 	sMemoryManager->StaticAlloc(RTC_REGISTER, 0x100);
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
-	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_CODE, code_hook, NULL, 1, 0));
+	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_READ_UNMAPPED, pf, 0, 1, 0));
 	return true;
 }
