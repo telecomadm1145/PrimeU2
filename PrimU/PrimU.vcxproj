@@ -182,6 +182,7 @@
     <ClInclude Include="SystemAPI.h" />
     <ClInclude Include="Thread.h" />
     <ClInclude Include="ThreadHandler.h" />
+    <ClInclude Include="ui.h" />
     <ClInclude Include="vprintf.h" />
     <ClInclude Include="InterruptHandler.h" />
     <ClInclude Include="stdafx.h" />

@@ -20,6 +20,7 @@
 #include <array>
 #include <vector>
 #include "handlers.h"
+#include "ui.h"
 
 namespace fs = std::filesystem;
 
@@ -1404,13 +1405,6 @@ uint32_t _findclose(Arguments* args) {
 	return find_close_internal(ctx_vptr);
 }
 
-uint32_t GetEvent(Arguments* args)
-{
-	// TODO: This is a stub function, as the original code does not provide a full implementation.
-	// printf("Warn: GetEvent stub!!!\n");
-	return 0; // Idk
-}
-
 /**
  * @brief Deletes a file specified by an ASCII/UTF-8 path.
  * @param args r0 contains a virtual pointer to the null-terminated path string.
@@ -1519,16 +1513,17 @@ uint32_t DeviceIoControl(Arguments* args) {
 	uint32_t size = args->r3;
 	char* out = __GET(char*, *__GET(uint32_t*, args->sp + 8));
 	int outlen = *__GET(int*, args->sp + 12);
-	uint32_t* retlen = __GET(uint32_t*,*__GET(int*, args->sp + 16));
+	uint32_t* retlen = __GET(uint32_t*, *__GET(int*, args->sp + 16));
 	void* overlapped = __GET(void*, *__GET(int*, args->sp + 20));
 
-	std::cout << "    +DeviceIoControl_stub handle:" << handle
-		<< " request:" << request
-		<< " size:" << size << "\n";
+	//std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
+	//	<< " request:" << request
+	//	<< " size:" << size << "\n";
 
-	// 打印 ioctl 缓冲区内容
-	std::cout << "    ioctl buffer dump:\n";
-	HexDump(in, size);
+	//// 打印 ioctl 缓冲区内容
+	//std::cout << "    ioctl buffer dump:\n";
+	//HexDump(in, size);
+	memset(out, 0xff, outlen); // 清空输出缓冲区
 	return 1; // Simulate success
 }
 uint32_t CloseHandle(Arguments* args) {
@@ -1541,4 +1536,31 @@ uint32_t CloseHandle(Arguments* args) {
 		return 1; // Success
 	}
 	return 0; // Failure, handle not found
+}
+
+uint32_t InterruptInitialize(Arguments* args) {
+	return sThreadHandler->interruptPC = (args->r2);
+}
+uint32_t InterruptDone(Arguments* args) {
+	if (sThreadHandler->interrupting) {
+		printf("Stop emu!\n");
+		sThreadHandler->interruptPC = 0xAAAAAAAA;
+	}
+	return 0;
+}
+
+uint32_t BatteryLowCheck(Arguments* args) {
+	return 0; // Battery OK!
+}
+uint32_t GetEvent(Arguments* args)
+{
+	printf("entering GetEvent!\n");
+	auto& event = *__GET(ui_event_prime_s*, args->r0);
+	event = {};
+	event.event_type = UI_EVENT_TYPE_TICK_2; // 0x10010
+	event.available_multipress_events = 1;
+	event.multipress_events[0].type = UI_EVENT_TYPE_KEY;
+	event.multipress_events[0].key_code0 = KEY_0; // Simulate A button press
+
+	return 0;
 }

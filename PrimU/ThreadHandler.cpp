@@ -3,15 +3,15 @@
 #include "ThreadHandler.h"
 #include "Thread.h"
 
-ThreadHandler* ThreadHandler::_instance = nullptr;
+StateManager* StateManager::_instance = nullptr;
 
-int ThreadHandler::NewThread(VirtPtr start, uint32_t arg, uint8_t priority, size_t stackSize)
+int StateManager::NewThread(VirtPtr start, uint32_t arg, uint8_t priority, size_t stackSize)
 {
     Thread* newThread = new Thread(&_currentThread, start, arg, priority, stackSize);
     return newThread->GetId();
 }
 
-void ThreadHandler::LoadCurrentThreadState()
+void StateManager::LoadCurrentThreadState()
 {
     if (_currentThread)
         _currentThread->LoadState();
@@ -22,20 +22,20 @@ void ThreadHandler::LoadCurrentThreadState()
 *   as it may save an errant PC value because
 *   of a UC engine bug
 */
-void ThreadHandler::SaveCurrentThreadState()
+void StateManager::SaveCurrentThreadState()
 {
     if (_currentThread)
         _currentThread->SaveState();
 }
 
-uint32_t ThreadHandler::GetCurrentThreadPC()
+uint32_t StateManager::GetCurrentThreadPC()
 {
     if (_currentThread)
         return _currentThread->GetCurrentPC();
     return 0;
 }
 
-void ThreadHandler::SwitchThread()
+void StateManager::SwitchThread()
 {
 
     if (_currentThread != _currentThread->GetNextThread()) {
@@ -45,7 +45,7 @@ void ThreadHandler::SwitchThread()
 }
 
 
-int ThreadHandler::SetThreadPriority(int threadId, uint8_t priority)
+int StateManager::SetThreadPriority(int threadId, uint8_t priority)
 {
     for (Thread* thread = nullptr; thread != _currentThread; thread = thread->GetNextThread()) {
         if (thread == nullptr)
@@ -60,22 +60,22 @@ int ThreadHandler::SetThreadPriority(int threadId, uint8_t priority)
 }
 
 
-int ThreadHandler::GetCurrentThreadId() const
+int StateManager::GetCurrentThreadId() const
 {
     return _currentThread->GetId();
 }
 
-uint32_t ThreadHandler::GetCurrentThreadQuantum() const
+uint32_t StateManager::GetCurrentThreadQuantum() const
 {
     return _currentThread->GetTimeQuantum();
 }
 
-bool ThreadHandler::CanCurrentThreadRun()
+bool StateManager::CanCurrentThreadRun()
 {
     return _currentThread->CanRun();
 }
 
-void ThreadHandler::InitCriticalSection(CriticalSection* criticalSection)
+void StateManager::InitCriticalSection(CriticalSection* criticalSection)
 {
     static int32_t critId = 0;
     criticalSection = new (criticalSection) CriticalSection();
@@ -85,17 +85,17 @@ void ThreadHandler::InitCriticalSection(CriticalSection* criticalSection)
 }
 
 
-void ThreadHandler::CurrentThreadEnterCriticalSection(CriticalSection* criticalSection)
+void StateManager::CurrentThreadEnterCriticalSection(CriticalSection* criticalSection)
 {
     _currentThread->EnterCriticalSection(criticalSection);
 }
 
-void ThreadHandler::CurrentThreadExitCriticalSection(CriticalSection* criticalSection)
+void StateManager::CurrentThreadExitCriticalSection(CriticalSection* criticalSection)
 {
     _currentThread->LeaveCriticalSection(criticalSection);
 }
 
-void ThreadHandler::CurrentThreadSleep(uint32_t time)
+void StateManager::CurrentThreadSleep(uint32_t time)
 {
     _currentThread->Sleep(time);
 }

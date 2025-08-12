@@ -39,10 +39,10 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_OSPeekMsgQue, HANDLE_NAMEONLY, "OSPeekMsgQue", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSGetMsgQue, HANDLE_NAMEONLY, "OSGetMsgQue", nullptr);
 	REGISTER_HANDLER(SDKLIB_OSCloseMsgQue, HANDLE_NAMEONLY, "OSCloseMsgQue", nullptr);
-	REGISTER_HANDLER(SDKLIB_InterruptInitialize, HANDLE_NAMEONLY, "InterruptInitialize", nullptr);
+	REGISTER_HANDLER(SDKLIB_InterruptInitialize, HANDLE_NAMEONLY, "InterruptInitialize", InterruptInitialize);
 	REGISTER_HANDLER(SDKLIB_InterruptEnable, HANDLE_NAMEONLY, "InterruptEnable", nullptr);
 	REGISTER_HANDLER(SDKLIB_InterruptDisable, HANDLE_NAMEONLY, "InterruptDisable", nullptr);
-	REGISTER_HANDLER(SDKLIB_InterruptDone, HANDLE_NAMEONLY, "InterruptDone", nullptr);
+	REGISTER_HANDLER(SDKLIB_InterruptDone, HANDLE_NAMEONLY, "InterruptDone", InterruptDone);
 	REGISTER_HANDLER(SDKLIB_InterruptSetMode, HANDLE_NAMEONLY, "InterruptSetMode", nullptr);
 	REGISTER_HANDLER(SDKLIB_DisableAutoSync, HANDLE_NAMEONLY, "DisableAutoSync", nullptr);
 	REGISTER_HANDLER(SDKLIB_EnableAutoSync, HANDLE_NAMEONLY, "EnableAutoSync", nullptr);
@@ -63,7 +63,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_SetSysKeyState, HANDLE_NAMEONLY, "SetSysKeyState", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetSysKeyState, HANDLE_NAMEONLY, "GetSysKeyState", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetBatteryType, HANDLE_NAMEONLY, "GetBatteryType", nullptr);
-	REGISTER_HANDLER(SDKLIB_BatteryLowCheck, HANDLE_NAMEONLY, "BatteryLowCheck", nullptr);
+	REGISTER_HANDLER(SDKLIB_BatteryLowCheck, HANDLE_NAMEONLY, "BatteryLowCheck", BatteryLowCheck);
 	REGISTER_HANDLER(SDKLIB_lmalloc, HANDLE_IMPLEMENTED, "lmalloc", lmalloc);
 	REGISTER_HANDLER(SDKLIB_lcalloc, HANDLE_IMPLEMENTED, "lcalloc", lcalloc);
 	REGISTER_HANDLER(SDKLIB_lrealloc, HANDLE_IMPLEMENTED, "lrealloc", lrealloc);
@@ -769,7 +769,7 @@ uint32_t SystemAPI::Call(InterruptID id, Arguments args)
 		auto _handle = _handler->second;
 
 		if (_handle->Callback) {
-			//printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
+			printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
 			//printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", args.r0, args.r0, args.r1,
 			//	args.r1, args.r2, args.r2, args.r3, args.r3, args.r4, args.r4, args.sp);
 			auto ret = _handle->Callback(&args);

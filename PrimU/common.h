@@ -18,6 +18,8 @@ enum ErrorCode {
 };
 
 typedef uint32_t VirtPtr;
+template<class T>
+using VirtPtr2 = uint32_t;
 typedef uint8_t* RealPtr;
 
 enum RegionSize : size_t
@@ -52,5 +54,9 @@ enum PRIORITY_LEVELS : uint8_t
 
 #define __check(f, v, e) if (f != v) return e
 #define __CAST(t, v) reinterpret_cast<t>(v)
+
+class unused {
+
+};
 
 #endif

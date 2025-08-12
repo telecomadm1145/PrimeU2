@@ -84,6 +84,9 @@
     <ClInclude Include="ThreadHandler.h">
       <Filter>Header Files\System</Filter>
     </ClInclude>
+    <ClInclude Include="ui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

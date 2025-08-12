@@ -71,3 +71,9 @@ uint32_t CreateFile(Arguments* args);
 uint32_t DeviceIoControl(Arguments* args);
 
 uint32_t CloseHandle(Arguments* args);
+
+uint32_t InterruptInitialize(Arguments* args);
+
+uint32_t InterruptDone(Arguments* args);
+
+uint32_t BatteryLowCheck(Arguments* args);

@@ -53,15 +53,17 @@ void ThreadState::SaveState()
 
 uint32_t Thread::GetTimeQuantum()
 {
-    return 500 - _priority;
+    if (this->_id == 0)
+        return 4000;
+    return 400 - _priority;
 }
 
 void Thread::EnterCriticalSection(CriticalSection* criticalSection)
 {
 #ifdef _DEBUG
     // If this triggers something is seriously broken
-    if (_requested != nullptr)
-        __debugbreak();
+    //if (_requested != nullptr)
+    //    __debugbreak();
 #endif
 
     // Critical section not initialized

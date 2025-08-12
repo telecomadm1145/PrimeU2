@@ -225,6 +225,27 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
 
+        // 创建临时 32 位缓冲区用于转换
+        uint32_t* tempBuffer = new uint32_t[lcd->xRes * lcd->yRes];
+
+        // 将 RGB555 转换为 ARGB8888
+        for (int i = 0; i < lcd->xRes * lcd->yRes; i++) {
+            uint16_t rgb555 = lcd->buffer[i];
+            // 提取 RGB 分量 (5-5-5 格式)
+            uint8_t r = (rgb555 >> 10) & 0x1F;  // 高5位是红色
+            uint8_t g = (rgb555 >> 5) & 0x1F;   // 中间5位是绿色
+            uint8_t b = rgb555 & 0x1F;          // 低5位是蓝色
+
+            // 将5位扩展到8位 (左移3位)
+            r = (r << 3) | (r >> 2);
+            g = (g << 3) | (g >> 2);
+            b = (b << 3) | (b >> 2);
+
+            // 组合成32位颜色 (0xAARRGGBB)
+            tempBuffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+        }
+
+
         BITMAPINFO bi = { 0 };
         bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
         bi.bmiHeader.biWidth = lcd->xRes;
@@ -234,9 +255,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         bi.bmiHeader.biCompression = BI_RGB;
 
         // Blit the pixel buffer to the window
-        StretchDIBits(hdc, 0, 0, lcd->xRes, lcd->yRes, 0, 0, lcd->xRes, lcd->yRes,
-            lcd->buffer, &bi, DIB_RGB_COLORS, SRCCOPY);
+        StretchDIBits(hdc,
+            0, 0, lcd->xRes, lcd->yRes,
+            0, 0, lcd->xRes, lcd->yRes,
+            tempBuffer, &bi, DIB_RGB_COLORS, SRCCOPY);
 
+        delete[] tempBuffer;  // 释放临时缓冲区
         EndPaint(hwnd, &ps);
         return 0;
     }
