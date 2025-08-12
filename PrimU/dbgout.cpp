@@ -5,7 +5,7 @@
 #include "vprintf.h"
 #include "InterruptHandler.h"
 
-uint32_t dbgMsg(Arguments* args)
+uint32_t dbgMsg(SystemServiceArguments* args)
 {
 
 

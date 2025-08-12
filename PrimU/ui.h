@@ -479,3 +479,5 @@ struct ui_event_prime_s {
 	UIMultipressEvent multipress_events[8]; // 28-124
 };
 
+
+void EnqueueEvent(UIMultipressEvent uime);

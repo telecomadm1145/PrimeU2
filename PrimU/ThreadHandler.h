@@ -32,6 +32,11 @@ public:
 
 	int SetThreadPriority(int threadId, uint8_t priority);
 
+	void WakeThread(int threadId);
+	void CurrentThreadYield() {
+		yielding = true;
+	}
+
 	void InitCriticalSection(CriticalSection* criticalSection);
 	void CurrentThreadEnterCriticalSection(CriticalSection* criticalSection);
 	void CurrentThreadExitCriticalSection(CriticalSection* criticalSection);
@@ -40,6 +45,8 @@ public:
 	bool interrupting = false;
 	bool pausing = false;
 	VirtPtr interruptPC = 0;
+
+	bool yielding = false;
 
 private:
 	StateManager() {}

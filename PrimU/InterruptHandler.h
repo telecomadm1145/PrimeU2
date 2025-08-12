@@ -13,9 +13,9 @@ enum HandleStatus
     HANDLE_UNKOWN
 };
 
-struct Arguments
+struct SystemServiceArguments
 {
-    Arguments()
+    SystemServiceArguments()
     {
         uc_reg_read_batch(sExecutor->GetUcInstance(), (int*)_regs, (void**)_args, 6);
     }
@@ -47,7 +47,7 @@ private:
     };
 };
 
-typedef uint32_t(*Handler)(Arguments* args);
+typedef uint32_t(*Handler)(SystemServiceArguments* args);
 
 struct InterruptHandler
 {

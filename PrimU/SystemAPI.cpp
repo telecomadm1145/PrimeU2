@@ -762,14 +762,14 @@ void SystemAPI::RegisterHandler(InterruptHandler* handler)
 }
 
 
-uint32_t SystemAPI::Call(InterruptID id, Arguments args)
+uint32_t SystemAPI::Call(InterruptID id, SystemServiceArguments args)
 {
 	auto _handler = _handlers.find(id);
 	if (_handler != _handlers.end()) {
 		auto _handle = _handler->second;
 
 		if (_handle->Callback) {
-			printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
+			//printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
 			//printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", args.r0, args.r0, args.r1,
 			//	args.r1, args.r2, args.r2, args.r3, args.r3, args.r4, args.r4, args.sp);
 			auto ret = _handle->Callback(&args);

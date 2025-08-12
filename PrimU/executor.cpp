@@ -32,6 +32,13 @@ void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 	if (counter++ < 8900000) {
 		return;
 	}
+	if (sThreadHandler->yielding) {
+		uc_emu_stop(sExecutor->GetUcInstance());
+		sThreadHandler->SaveCurrentThreadState();
+		sThreadHandler->yielding = false;
+		lastUpdate = std::chrono::high_resolution_clock::now();
+		return;
+	}
 	if ((elapsed.count() < sThreadHandler->GetCurrentThreadQuantum() && canrun) ) {
 		return;
 	}
@@ -327,7 +334,7 @@ void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_d
 
 	SVC &= 0xFFFFF;
 
-	uint32_t return_value = sSystemAPI->Call(static_cast<InterruptID>(SVC), Arguments());
+	uint32_t return_value = sSystemAPI->Call(static_cast<InterruptID>(SVC), SystemServiceArguments());
 	// printf("    Caller: %08X\n    PC: %08X\n", lr - 4, pc);
 	sp += 8;
 

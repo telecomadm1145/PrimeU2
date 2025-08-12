@@ -11,7 +11,7 @@ class SystemAPI
 public:
     static SystemAPI* GetInstance() { return !_instance ? _instance = new SystemAPI : _instance; }
 
-    uint32_t Call(InterruptID id, Arguments args);
+    uint32_t Call(InterruptID id, SystemServiceArguments args);
 
 private:
     SystemAPI();

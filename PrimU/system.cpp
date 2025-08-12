@@ -152,7 +152,7 @@ static bool ensure_parent_dirs_for_hostpath(const std::string& hostPath) {
 // ====== 虚拟文件表（open/read/write/close/seek） ======
 
 // 返回非 0 的 handle 表示成功
-uint32_t _OpenFile(Arguments* args)
+uint32_t _OpenFile(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -191,7 +191,7 @@ uint32_t _OpenFile(Arguments* args)
 	return handle;
 }
 
-uint32_t __wfopen(Arguments* args)
+uint32_t __wfopen(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -227,7 +227,7 @@ uint32_t __wfopen(Arguments* args)
 	return handle;
 }
 
-uint32_t _CloseFile(Arguments* args)
+uint32_t _CloseFile(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r0;
 	std::lock_guard<std::mutex> lk(g_vfile_mutex);
@@ -239,7 +239,7 @@ uint32_t _CloseFile(Arguments* args)
 }
 
 // _ReadFile(handle, destVirtPtr, size) -> returns bytes read
-uint32_t _ReadFile(Arguments* args)
+uint32_t _ReadFile(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r0;
 	VirtPtr destVPtr = args->r1;
@@ -259,7 +259,7 @@ uint32_t _ReadFile(Arguments* args)
 }
 
 // _WriteFile(handle, srcVirtPtr, size) -> returns bytes written
-uint32_t _WriteFile(Arguments* args)
+uint32_t _WriteFile(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r0;
 	VirtPtr srcVPtr = args->r1;
@@ -281,7 +281,7 @@ uint32_t _WriteFile(Arguments* args)
 
 // _SeekFile(handle, offset, origin) -> returns 0 on success, non-zero on error
 // offset: int32 (args->r1) origin: 0 SEEK_SET, 1 SEEK_CUR, 2 SEEK_END (args->r2)
-uint32_t _SeekFile(Arguments* args)
+uint32_t _SeekFile(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r0;
 	int32_t offset = static_cast<int32_t>(args->r1);
@@ -304,7 +304,7 @@ uint32_t _SeekFile(Arguments* args)
 // ====== 目录 & CWD 操作 ======
 
 // _amkdir(vmName)
-uint32_t _amkdir(Arguments* args)
+uint32_t _amkdir(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -324,7 +324,7 @@ uint32_t _amkdir(Arguments* args)
 }
 
 // _achdir(vmName) -> 会更新对应 drive 的 g_cwds，并可能改变 g_currentDrive（如果指定了驱动字母）
-uint32_t _achdir(Arguments* args)
+uint32_t _achdir(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -393,14 +393,14 @@ uint32_t _achdir(Arguments* args)
 }
 
 // 返回 active LCD 已存在实现中使用
-uint32_t GetActiveLCD(Arguments* args)
+uint32_t GetActiveLCD(SystemServiceArguments* args)
 {
 	return sLCDHandler->GetActiveLCDPtr();
 }
 
 // ====== 简单的 INI 读取（_GetPrivateProfileString） ======
 // signature from your code: (r0=dest buffer ptr, r1=appName, r2=keyName, [sp+8]=size, [sp+0xC]=filenamePtr)
-uint32_t _GetPrivateProfileString(Arguments* args)
+uint32_t _GetPrivateProfileString(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -525,7 +525,7 @@ uint32_t _GetPrivateProfileString(Arguments* args)
 // ====== 简单的 INI 写入 (_SetPrivateProfileString) ======
 // signature follows Windows API: WritePrivateProfileString(lpAppName, lpKeyName, lpString, lpFileName)
 // We map this to: (r0=appName, r1=keyName, r2=stringToWrite, r3=filenamePtr)
-uint32_t _SetPrivateProfileString(Arguments* args)
+uint32_t _SetPrivateProfileString(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -671,7 +671,7 @@ uint32_t _SetPrivateProfileString(Arguments* args)
 
 VirtPtr struc = 0;
 
-uint32_t prgrmIsRunning(Arguments* args)
+uint32_t prgrmIsRunning(SystemServiceArguments* args)
 {
 	printf("    program: %s\n", __GET(char*, args->r0));
 
@@ -680,7 +680,7 @@ uint32_t prgrmIsRunning(Arguments* args)
 
 	return struc;
 }
-uint32_t getCurrentDir(Arguments*) {
+uint32_t getCurrentDir(SystemServiceArguments*) {
 	auto& cwd = g_cwds[g_currentDrive - 'A'];
 	VirtPtr vp;
 	sMemoryManager->DyanmicAlloc(&vp, cwd.size() + 1);
@@ -689,46 +689,46 @@ uint32_t getCurrentDir(Arguments*) {
 	return vp;
 }
 
-uint32_t _FindResourceW(Arguments* args)
+uint32_t _FindResourceW(SystemServiceArguments* args)
 {
 	// TODO
 	printf("Warn: FindResourceW stub!!!\n");
 	return 0;
 }
 
-uint32_t _LoadLibraryA(Arguments* args)
+uint32_t _LoadLibraryA(SystemServiceArguments* args)
 {
 	// TODO
 	printf("Warn: LoadLibraryA stub!!!\n");
 	return 0;
 }
 
-uint32_t _FreeLibrary(Arguments* args)
+uint32_t _FreeLibrary(SystemServiceArguments* args)
 {
 	// TODO
 	printf("Warn: FreeLibrary stub!!!\n");
 	return 0;
 }
 
-uint32_t OSInitCriticalSection(Arguments* args)
+uint32_t OSInitCriticalSection(SystemServiceArguments* args)
 {
 	sThreadHandler->InitCriticalSection(__GET(CriticalSection*, args->r0));
 	return args->r0;
 }
 
-uint32_t OSEnterCriticalSection(Arguments* args)
+uint32_t OSEnterCriticalSection(SystemServiceArguments* args)
 {
 	sThreadHandler->CurrentThreadEnterCriticalSection(__GET(CriticalSection*, args->r0));
 	return args->r0;
 }
 
-uint32_t OSLeaveCriticalSection(Arguments* args)
+uint32_t OSLeaveCriticalSection(SystemServiceArguments* args)
 {
 	sThreadHandler->CurrentThreadExitCriticalSection(__GET(CriticalSection*, args->r0));
 	return args->r0;
 }
 
-uint32_t OSSleep(Arguments* args)
+uint32_t OSSleep(SystemServiceArguments* args)
 {
 	sThreadHandler->CurrentThreadSleep(args->r0);
 	return args->r0;
@@ -750,7 +750,7 @@ struct EVENT
 	uint8_t unk11;
 };
 
-uint32_t OSCreateEvent(Arguments* args)
+uint32_t OSCreateEvent(SystemServiceArguments* args)
 {
 	VirtPtr allocAddr;
 	sMemoryManager->DyanmicAlloc(&allocAddr, 0x14);
@@ -763,20 +763,20 @@ uint32_t OSCreateEvent(Arguments* args)
 	return allocAddr;
 }
 
-uint32_t OSSetEvent(Arguments* args)
+uint32_t OSSetEvent(SystemServiceArguments* args)
 {
 	DUMPARGS;
 	return 0;
 }
 
-uint32_t LCDOn(Arguments* args)
+uint32_t LCDOn(SystemServiceArguments* args)
 {
 	DUMPARGS;
 	return 0;
 }
 
 
-uint32_t lcalloc(Arguments* args)
+uint32_t lcalloc(SystemServiceArguments* args)
 {
 	//	printf("    +nElements: %i | size: %i\n", args->r0, args->r1);
 
@@ -791,7 +791,7 @@ uint32_t lcalloc(Arguments* args)
 	return 0;
 }
 
-uint32_t lmalloc(Arguments* args)
+uint32_t lmalloc(SystemServiceArguments* args)
 {
 	// printf("    +size: %i\n", args->r0);
 
@@ -802,7 +802,7 @@ uint32_t lmalloc(Arguments* args)
 	return 0;
 }
 
-uint32_t lrealloc(Arguments* args)
+uint32_t lrealloc(SystemServiceArguments* args)
 {
 	VirtPtr ptr = args->r0;
 	uint32_t new_size = args->r1;
@@ -818,7 +818,7 @@ uint32_t lrealloc(Arguments* args)
 	return ptr;
 }
 
-uint32_t _lfree(Arguments* args)
+uint32_t _lfree(SystemServiceArguments* args)
 {
 	ErrorCode err;
 	if ((err = sMemoryManager->DynamicFree(args->r0)) != ERROR_OK)
@@ -826,13 +826,13 @@ uint32_t _lfree(Arguments* args)
 	return args->r0;
 }
 
-uint32_t OSCreateThread(Arguments* args)
+uint32_t OSCreateThread(SystemServiceArguments* args)
 {
 	DUMPARGS;
 	return sThreadHandler->NewThread(args->r0, args->r4);
 }
 
-uint32_t OSSetThreadPriority(Arguments* args)
+uint32_t OSSetThreadPriority(SystemServiceArguments* args)
 {
 	DUMPARGS;
 	sThreadHandler->SetThreadPriority(args->r0, args->r1);
@@ -851,7 +851,7 @@ struct SystemTime
 	uint16_t Milliseconds;
 };
 
-uint32_t GetSysTime(Arguments* args)
+uint32_t GetSysTime(SystemServiceArguments* args)
 {
 	SystemTime* sysTime = __GET(SystemTime*, args->r0);
 	auto now = std::chrono::system_clock::now();
@@ -867,12 +867,12 @@ uint32_t GetSysTime(Arguments* args)
 	sysTime->Second = parts->tm_sec;
 	auto totalMSec = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 	sysTime->Milliseconds = static_cast<uint16_t>(totalMSec % 1000);
-
+	sThreadHandler->CurrentThreadYield();
 	return args->r0;
 }
 
 // append-write: _fwrite(handle, srcVirtPtr, size) -> bytes written (append to file end)
-uint32_t _fwrite(Arguments* args)
+uint32_t _fwrite(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r3;
 	VirtPtr srcVPtr = args->r0;
@@ -904,7 +904,7 @@ uint32_t _fwrite(Arguments* args)
 }
 
 // close: mirror of _CloseFile but named _fclose (returns 1 on success)
-uint32_t _fclose(Arguments* args)
+uint32_t _fclose(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r0;
 	if (handle == 0) return 0;
@@ -977,7 +977,7 @@ static bool get_file_size_preserve_pos(FILE* f, uint64_t& out_size, uint64_t& ou
 #endif
 }
 
-uint32_t _filesize(Arguments* args)
+uint32_t _filesize(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r0;
 	if (handle == 0) return 0;
@@ -996,7 +996,7 @@ uint32_t _filesize(Arguments* args)
 }
 
 // --------- _fread: read from current file pointer into VM memory ----------
-uint32_t _fread(Arguments* args)
+uint32_t _fread(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r3;
 	VirtPtr destVPtr = args->r0;
@@ -1363,7 +1363,7 @@ int find_close_internal(VirtPtr ctx_vptr) {
 
 // ====== Public API Implementations (add these to your handler map) ======
 
-uint32_t _afindfirst(Arguments* args) {
+uint32_t _afindfirst(SystemServiceArguments* args) {
 	const char* fnmatch = __GET(char*, args->r0);
 	VirtPtr ctx_vptr = args->r1;
 	int attrib_mask = args->r2;
@@ -1373,7 +1373,7 @@ uint32_t _afindfirst(Arguments* args) {
 	return find_first_internal(std::string(fnmatch), ctx_vptr, attrib_mask);
 }
 #undef _wfindfirst
-uint32_t _wfindfirst(Arguments* args) {
+uint32_t _wfindfirst(SystemServiceArguments* args) {
 	const wchar_t* w_fnmatch = __GET(wchar_t*, args->r0);
 	VirtPtr ctx_vptr = args->r1;
 	int attrib_mask = args->r2;
@@ -1386,20 +1386,20 @@ uint32_t _wfindfirst(Arguments* args) {
 	return find_first_internal(u8_fnmatch, ctx_vptr, attrib_mask);
 }
 
-uint32_t _afindnext(Arguments* args) {
+uint32_t _afindnext(SystemServiceArguments* args) {
 	VirtPtr ctx_vptr = args->r0;
 	if (!ctx_vptr) return (uint32_t)-1;
 	return find_next_internal(ctx_vptr);
 }
 #undef _wfindnext
-uint32_t _wfindnext(Arguments* args) {
+uint32_t _wfindnext(SystemServiceArguments* args) {
 	// This is interchangeable with _afindnext
 	VirtPtr ctx_vptr = args->r0;
 	if (!ctx_vptr) return (uint32_t)-1;
 	return find_next_internal(ctx_vptr);
 }
 
-uint32_t _findclose(Arguments* args) {
+uint32_t _findclose(SystemServiceArguments* args) {
 	VirtPtr ctx_vptr = args->r0;
 	if (!ctx_vptr) return (uint32_t)-1;
 	return find_close_internal(ctx_vptr);
@@ -1410,7 +1410,7 @@ uint32_t _findclose(Arguments* args) {
  * @param args r0 contains a virtual pointer to the null-terminated path string.
  * @return 0 on success, non-zero on failure.
  */
-uint32_t _aremove(Arguments* args)
+uint32_t _aremove(SystemServiceArguments* args)
 {
 	// 1. Get the virtual path from arguments.
 	const char* vmPath = __GET(char*, args->r0);
@@ -1448,7 +1448,7 @@ uint32_t _aremove(Arguments* args)
  * @param args r0 contains a virtual pointer to the null-terminated wide-character path string.
  * @return 0 on success, non-zero on failure.
  */
-uint32_t _wremove(Arguments* args)
+uint32_t _wremove(SystemServiceArguments* args)
 {
 	// 1. Get the virtual path from arguments.
 	const wchar_t* wVmPath = __GET(wchar_t*, args->r0);
@@ -1483,7 +1483,7 @@ uint32_t _wremove(Arguments* args)
 }
 static std::unordered_map<uint32_t, std::string> g_vdev_table;
 static uint32_t g_next_dev_handle = 1; // 0 保留为失败/无效
-uint32_t CreateFile(Arguments* args) {
+uint32_t CreateFile(SystemServiceArguments* args) {
 	std::cout << "    +CreateFile_stub name:" << __GET(char*, args->r0) << "\n";
 	g_vdev_table[++g_next_dev_handle] = __GET(char*, args->r0); // Store the device name in the map
 	return g_next_dev_handle;
@@ -1506,7 +1506,7 @@ static void HexDump(const void* data, size_t size) {
 	std::cout << std::dec; // 恢复默认输出格式
 }
 
-uint32_t DeviceIoControl(Arguments* args) {
+uint32_t DeviceIoControl(SystemServiceArguments* args) {
 	uint32_t handle = args->r0;
 	uint32_t request = args->r1;
 	char* in = __GET(char*, args->r2);
@@ -1526,7 +1526,7 @@ uint32_t DeviceIoControl(Arguments* args) {
 	memset(out, 0xff, outlen); // 清空输出缓冲区
 	return 1; // Simulate success
 }
-uint32_t CloseHandle(Arguments* args) {
+uint32_t CloseHandle(SystemServiceArguments* args) {
 	uint32_t handle = args->r0;
 	if (handle == 0) return 0; // Invalid handle
 	std::cout << "    +CloseHandle_stub handle:" << handle << "\n";
@@ -1538,10 +1538,10 @@ uint32_t CloseHandle(Arguments* args) {
 	return 0; // Failure, handle not found
 }
 
-uint32_t InterruptInitialize(Arguments* args) {
+uint32_t InterruptInitialize(SystemServiceArguments* args) {
 	return sThreadHandler->interruptPC = (args->r2);
 }
-uint32_t InterruptDone(Arguments* args) {
+uint32_t InterruptDone(SystemServiceArguments* args) {
 	if (sThreadHandler->interrupting) {
 		printf("Stop emu!\n");
 		sThreadHandler->interruptPC = 0xAAAAAAAA;
@@ -1549,18 +1549,44 @@ uint32_t InterruptDone(Arguments* args) {
 	return 0;
 }
 
-uint32_t BatteryLowCheck(Arguments* args) {
+uint32_t BatteryLowCheck(SystemServiceArguments* args) {
+	//sThreadHandler->CurrentThreadSleep(1000);
 	return 0; // Battery OK!
 }
-uint32_t GetEvent(Arguments* args)
+
+int _ui_thread_id = 0;
+
+std::mutex lock;
+std::vector<UIMultipressEvent> events;
+// Not a system service
+void EnqueueEvent(UIMultipressEvent uime) {
+	std::lock_guard lg(lock);
+	events.push_back(uime);
+
+	sThreadHandler->WakeThread(_ui_thread_id);
+}
+
+uint32_t GetEvent(SystemServiceArguments* args)
 {
-	printf("entering GetEvent!\n");
 	auto& event = *__GET(ui_event_prime_s*, args->r0);
 	event = {};
-	event.event_type = UI_EVENT_TYPE_TICK_2; // 0x10010
-	event.available_multipress_events = 1;
-	event.multipress_events[0].type = UI_EVENT_TYPE_KEY;
-	event.multipress_events[0].key_code0 = KEY_0; // Simulate A button press
-
+	std::lock_guard lg(lock);
+	event.event_type = UI_EVENT_TYPE_TICK_2;
+	event.available_multipress_events = 0;
+	//event.available_multipress_events = 1;
+	//event.multipress_events[0].type = UI_EVENT_TYPE_KEY;
+	//event.multipress_events[0].key_code0 = KEY_0;
+	if (events.size()) {
+		//if (events[0].type == UI_EVENT_TYPE_KEY) {
+		//	event.event_type = UI_EVENT_TYPE_TICK_2;
+		//}
+		event.available_multipress_events = events.size();
+		std::copy(events.begin(), events.end(), event.multipress_events);
+		events.clear();
+	}
+	else {
+		_ui_thread_id = sThreadHandler->GetCurrentThreadId();
+		sThreadHandler->CurrentThreadYield();
+	}
 	return 0;
 }
