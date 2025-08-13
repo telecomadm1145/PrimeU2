@@ -85,7 +85,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_ClearEvent, HANDLE_NAMEONLY, "ClearEvent", nullptr);
 	REGISTER_HANDLER(SDKLIB_ClearAllEvents, HANDLE_NAMEONLY, "ClearAllEvents", nullptr);
 	REGISTER_HANDLER(SDKLIB_TestKeyEvent, HANDLE_NAMEONLY, "TestKeyEvent", nullptr);
-	REGISTER_HANDLER(SDKLIB_SetSystemVariable, HANDLE_NAMEONLY, "SetSystemVariable", nullptr);
+	REGISTER_HANDLER(SDKLIB_SetSystemVariable, HANDLE_NAMEONLY, "SetSystemVariable", SetSystemVariable);
 	REGISTER_HANDLER(SDKLIB_GetCharWidth, HANDLE_NAMEONLY, "GetCharWidth", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetFontHeight, HANDLE_NAMEONLY, "GetFontHeight", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetFontType, HANDLE_NAMEONLY, "GetFontType", nullptr);
@@ -202,7 +202,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_CompSecretkey, HANDLE_NAMEONLY, "CompSecretkey", nullptr);
 	REGISTER_HANDLER(SDKLIB_ClearSecretkey, HANDLE_NAMEONLY, "ClearSecretkey", nullptr);
 	REGISTER_HANDLER(SDKLIB_SetUserFontHandle, HANDLE_NAMEONLY, "SetUserFontHandle", nullptr);
-	REGISTER_HANDLER(SDKLIB_GetMasterIDInfo, HANDLE_NAMEONLY, "GetMasterIDInfo", nullptr);
+	REGISTER_HANDLER(SDKLIB_GetMasterIDInfo, HANDLE_NAMEONLY, "GetMasterIDInfo", GetMasterIDInfo);
 	REGISTER_HANDLER(SDKLIB_ReadFollowMe, HANDLE_NAMEONLY, "ReadFollowMe", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetPrivateState, HANDLE_NAMEONLY, "GetPrivateState", nullptr);
 	REGISTER_HANDLER(SDKLIB_SetPrivateState, HANDLE_NAMEONLY, "SetPrivateState", nullptr);

@@ -519,7 +519,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			uime.touch_x = static_cast<uint16_t>(x);
 			uime.touch_y = static_cast<uint16_t>(y);
 			uime.type = UI_EVENT_TYPE_TOUCH_MOVE;
-			//EnqueueEvent(uime);
+			EnqueueEvent(uime);
 		}
 		break;
 	}

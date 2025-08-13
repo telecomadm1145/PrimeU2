@@ -794,6 +794,10 @@ uint32_t LCDOn(SystemServiceArguments* args)
 	// DUMPARGS;
 	return 0;
 }
+uint32_t SetSystemVariable(SystemServiceArguments* args) {
+	printf("    + sys.var %d (type %d) <- %d\n", args->r0, args->r1, args->r2);
+	return 0;
+}
 
 
 uint32_t lcalloc(SystemServiceArguments* args)
@@ -1543,6 +1547,16 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 	//// 打印 ioctl 缓冲区内容
 	//std::cout << "    ioctl buffer dump:\n";
 	//HexDump(in, size);
+	if (g_vdev_table.find(handle) == g_vdev_table.end()) {
+		// std::cerr << "    +DeviceIoControl_stub: Invalid handle " << handle << "\n";
+		return 0; // Invalid handle
+	}
+	if (g_vdev_table[handle].ends_with("BAT")) {
+		auto voltage = (float*)out;
+		// TODO: Idk why this works...
+		voltage[0] = voltage[1] = voltage[2] = voltage[3] = 4;
+		return 1;
+	}
 	memset(out, 0xff, outlen); // 清空输出缓冲区
 	return 1; // Simulate success
 }
@@ -1585,32 +1599,54 @@ void EnqueueEvent(UIMultipressEvent uime) {
 
 	sThreadHandler->WakeThread(_ui_thread_id);
 }
-
 uint32_t GetEvent(SystemServiceArguments* args)
 {
 	auto& event = *__GET(ui_event_prime_s*, args->r0);
-	event = {};
-	std::lock_guard lg(lock);
-	event.event_type = UI_EVENT_TYPE_TICK_2;
+	event = {}; // 初始化事件结构体
+
+	std::lock_guard lg(lock); // 加锁保护 events 队列
+
+	// 1. 设置默认事件类型
+	event.event_type = UI_EVENT_TYPE_TICK;
 	event.available_multipress_events = 0;
-	//event.available_multipress_events = 1;
-	//event.multipress_events[0].type = UI_EVENT_TYPE_KEY;
-	//event.multipress_events[0].key_code0 = KEY_0;
-	if (events.size()) {
-		//if (events[0].type == UI_EVENT_TYPE_KEY) {
-		//	event.event_type = UI_EVENT_TYPE_TICK_2;
-		//}
-		if (events.size() > 8) {
+
+	if (!events.empty()) {
+		// 2. 检查队列中是否存在任何 KEY 或 KEY_UP 事件
+		bool hasKeyEvent = std::any_of(events.begin(), events.end(), [](const auto& ev) {
+			return ev.type == UI_EVENT_TYPE_KEY || ev.type == UI_EVENT_TYPE_KEY_UP;
+			});
+
+		// 3. 如果存在按键事件，则更新主事件类型
+		if (hasKeyEvent) {
+			event.event_type = UI_EVENT_TYPE_TICK_2;
+		}
+
+		// 防止溢出的安全检查
+		if (events.size() > 8) { // 假设 multipress_events 的最大容量是 8
 			events.clear();
 			return 0;
 		}
+
+		// 4. 收集队列中的所有事件
 		event.available_multipress_events = events.size();
 		std::copy(events.begin(), events.end(), event.multipress_events);
+
+		// 清空已处理的事件队列
 		events.clear();
 	}
 	else {
+		// 如果没有事件，则线程让出，等待新事件
 		_ui_thread_id = sThreadHandler->GetCurrentThreadId();
 		sThreadHandler->CurrentThreadYield();
 	}
+
 	return 0;
 }
+uint32_t GetMasterIDInfo(SystemServiceArguments* args) {
+	auto ptr = __GET(char*, args->r0);
+	//auto sz = args->r1;
+	memcpy(ptr + 58, "HPPRIMEEMU", 12);
+
+	return 0;
+}
+

@@ -24,7 +24,7 @@ typedef uint8_t* RealPtr;
 
 enum RegionSize : size_t
 {
-    MEM_STACK_SIZE = 0x04000,
+    MEM_STACK_SIZE = 0x040000,
     MEM_DYNAMIC_SIZE = 0x10000000,
     LCD_REGISTER_SIZE = 0x4E000000 - 0x4C800000
 };

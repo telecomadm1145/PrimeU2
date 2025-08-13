@@ -31,6 +31,7 @@ uint32_t OSSuspendThread(SystemServiceArguments* args);
 uint32_t OSResumeThread(SystemServiceArguments* args);
 uint32_t SysPowerOff(SystemServiceArguments* args);
 uint32_t LCDOn(SystemServiceArguments* args);
+uint32_t SetSystemVariable(SystemServiceArguments* args);
 uint32_t GetActiveLCD(SystemServiceArguments* args);
 
 uint32_t lcalloc(SystemServiceArguments* args);
@@ -65,6 +66,8 @@ uint32_t _wfindnext(SystemServiceArguments* args);
 uint32_t _findclose(SystemServiceArguments* args);
 
 uint32_t GetEvent(SystemServiceArguments* args);
+
+uint32_t GetMasterIDInfo(SystemServiceArguments* args);
 
 uint32_t _aremove(SystemServiceArguments* args);
 

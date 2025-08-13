@@ -20,6 +20,140 @@ Executor* Executor::m_instance = nullptr;
 #define callAndcheckError(f) m_err = f; if (m_err != UC_ERR_OK) return false
 #define DEFINE_INTERRUPT(id, s, n, c) m_interrupts.insert(std::pair<InterruptID, InterruptHandle*>(id, new InterruptHandle(id, s, c, n)))
 
+static bool TryRead32(uc_engine * uc, uint32_t addr, uint32_t * out) {
+	return uc_mem_read(uc, addr, out, sizeof(uint32_t)) == UC_ERR_OK;
+}
+
+static void PrintOneFrame(uc_engine * uc, csh cs, uint32_t addr, int idx) {
+	if (addr == 0) {
+		printf("#%02d 0x%08X\n", idx, addr);
+		return;
+	}
+
+	// 尝试反汇编一条指令作为注释（失败就只打地址）
+	uint8_t bytes[8] = { 0 };
+	if (uc_mem_read(uc, addr, bytes, sizeof(bytes)) == UC_ERR_OK) {
+		cs_insn* insn = nullptr;
+		size_t cnt = cs_disasm(cs, bytes, sizeof(bytes), addr, 1, &insn);
+		if (cnt > 0 && insn) {
+			printf("#%02d 0x%08X  %s %s\n", idx, addr, insn[0].mnemonic, insn[0].op_str);
+			cs_free(insn, cnt);
+			return;
+		}
+	}
+	printf("#%02d 0x%08X\n", idx, addr);
+}
+
+static void PrintStackTrace(uc_engine * uc) {
+	uint32_t sp = 0, lr = 0, pc = 0, fp = 0, cpsr = 0;
+	uc_reg_read(uc, UC_ARM_REG_SP, &sp);
+	uc_reg_read(uc, UC_ARM_REG_LR, &lr);
+	uc_reg_read(uc, UC_ARM_REG_PC, &pc);
+	// R11 常作为帧指针（AAPCS），若你的编译器/ABI不保留帧指针，则只能靠启发式
+	uc_reg_read(uc, UC_ARM_REG_R11, &fp);
+	uc_reg_read(uc, UC_ARM_REG_CPSR, &cpsr); // 失败也没关系
+
+	auto sanitize = [](uint32_t addr) { return addr & ~1u; };
+	auto is_thumb_addr = [](uint32_t addr) { return (addr & 1u) != 0; };
+
+	// 当前模式（用于 PC），后续每个返回地址单独判断 Thumb 位
+	bool pc_thumb = is_thumb_addr(pc) || ((cpsr & (1u << 5)) != 0);
+	uint32_t pc_sanitized = sanitize(pc);
+
+	printf("\n--- Stack trace ---\n");
+
+	csh handle = 0;
+	cs_mode mode = pc_thumb ? CS_MODE_THUMB : CS_MODE_ARM;
+	if (cs_open(CS_ARCH_ARM, mode, &handle) == CS_ERR_OK) {
+		cs_option(handle, CS_OPT_DETAIL, CS_OPT_OFF);
+
+		int depth = 0;
+
+		// Frame 0: 当前 PC
+		PrintOneFrame(uc, handle, pc_sanitized, depth++);
+
+		// Frame 1: 来自 LR 的返回地址对应“调用点”
+		if (lr) {
+			// 每个地址单独判断是否 Thumb，再决定回退多少字节以指向 BL/BLX
+			bool lr_thumb = is_thumb_addr(lr);
+			uint32_t lr_sanitized = sanitize(lr);
+			uint32_t call_site = lr_sanitized - (lr_thumb ? 2u : 4u);
+			PrintOneFrame(uc, handle, call_site, depth++);
+		}
+
+		// 后续：用 R11 帧链展开（AAPCS 常见布局： [fp-4] = prev_fp, [fp] = saved_lr）
+		const int MAX_FRAMES = 64;
+		uint32_t cur_fp = fp;
+		uint32_t last_fp = 0;
+
+		for (int i = 0; i < MAX_FRAMES; ++i) {
+			if (cur_fp == 0 || cur_fp == last_fp) break;
+
+			uint32_t prev_fp = 0, saved_lr = 0;
+			if (!TryRead32(uc, cur_fp - 4, &prev_fp)) break;
+			if (!TryRead32(uc, cur_fp, &saved_lr)) break;
+
+			if (saved_lr != 0) {
+				bool ret_thumb = is_thumb_addr(saved_lr);
+				uint32_t ret_sanitized = sanitize(saved_lr);
+				uint32_t call_site = ret_sanitized - (ret_thumb ? 2u : 4u);
+				PrintOneFrame(uc, handle, call_site, depth++);
+			}
+
+			last_fp = cur_fp;
+			cur_fp = prev_fp;
+		}
+
+		cs_close(&handle);
+	}
+	else {
+		// Capstone 初始化失败时，退化为仅打印地址
+		int depth = 0;
+		printf("#%02d 0x%08X\n", depth++, pc_sanitized);
+		if (lr) {
+			bool lr_thumb = is_thumb_addr(lr);
+			uint32_t lr_sanitized = sanitize(lr);
+			uint32_t call_site = lr_sanitized - (lr_thumb ? 2u : 4u);
+			printf("#%02d 0x%08X\n", depth++, call_site);
+		}
+
+		const int MAX_FRAMES = 64;
+		uint32_t cur_fp = fp;
+		uint32_t last_fp = 0;
+		for (int i = 0; i < MAX_FRAMES; ++i) {
+			if (cur_fp == 0 || cur_fp == last_fp) break;
+
+			uint32_t prev_fp = 0, saved_lr = 0;
+			if (!TryRead32(uc, cur_fp - 4, &prev_fp)) break;
+			if (!TryRead32(uc, cur_fp, &saved_lr)) break;
+
+			if (saved_lr) {
+				bool ret_thumb = is_thumb_addr(saved_lr);
+				uint32_t ret_sanitized = sanitize(saved_lr);
+				uint32_t call_site = ret_sanitized - (ret_thumb ? 2u : 4u);
+				printf("#%02d 0x%08X\n", depth++, call_site);
+			}
+
+			last_fp = cur_fp;
+			cur_fp = prev_fp;
+		}
+	}
+
+	// 附加：栈 dump，便于肉眼搜返回地址
+	printf("\n--- Stack dump (SP=0x%08X) ---\n", sp);
+	const int WORDS = 32; // 打印 32 个 word
+	uint32_t buf[WORDS] = { 0 };
+	if (uc_mem_read(uc, sp, buf, sizeof(buf)) == UC_ERR_OK) {
+		for (int i = 0; i < WORDS; i += 4) {
+			printf("  0x%08X: %08X %08X %08X %08X\n",
+				sp + i * 4, buf[i], buf[i + 1], buf[i + 2], buf[i + 3]);
+		}
+	}
+	else {
+		printf("  Failed to read stack memory.\n");
+	}
+}
+
 void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
 void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
@@ -68,6 +202,7 @@ bool Executor::Initialize(Executable* exec)
 }
 
 uc_hook m_page_fault;
+uc_hook m_page_fault2;
 void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 
 	uint32_t r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, sp, pc, lr;
@@ -163,12 +298,14 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 	{
 		printf("    Failed to initialize Capstone disassembler.\n");
 	}
+	PrintStackTrace(uc);
 }
 bool Executor::Cleanup()
 {
 	callAndcheckError(uc_hook_del(m_uc, m_interrupt_hook));
 	callAndcheckError(uc_hook_del(m_uc, _codeHook));
 	callAndcheckError(uc_hook_del(m_uc, m_page_fault));
+	callAndcheckError(uc_hook_del(m_uc, m_page_fault2));
 	__check(sMemoryManager->StaticFree(LCD_REGISTER), ERROR_OK, false);
 	callAndcheckError(uc_close(m_uc));
 }
@@ -180,6 +317,7 @@ bool Executor::InitInterrupts()
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_READ_UNMAPPED, pf, 0, 1, 0));
+	callAndcheckError(uc_hook_add(m_uc, &m_page_fault2, UC_HOOK_MEM_WRITE_UNMAPPED, pf, 0, 1, 0));
 	return true;
 }
 void Executor::Execute()

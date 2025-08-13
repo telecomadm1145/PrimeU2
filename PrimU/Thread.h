@@ -71,7 +71,7 @@ public:
 
         VirtPtr stackPtrStart;
         sMemoryManager->DyanmicAlloc(&_stackAddr, _stackSize);
-        stackPtrStart = sMemoryManager->GetAllocSize(_stackAddr) - 1 + _stackAddr;
+        stackPtrStart = sMemoryManager->GetAllocSize(_stackAddr) + _stackAddr;
         printf("Thread [%i] stack starts at %08X and ends at %08X\n", _id, stackPtrStart, _stackAddr);
 
         _state = new ThreadState(start, stackPtrStart, arg);
