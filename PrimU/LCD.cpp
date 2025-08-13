@@ -82,6 +82,7 @@ std::map<int, int> vk_to_device_keymap = {
 	{ 'V',             0xB6 }, // Alpha
 	{ 'N',             0x95 }, // 帮助
 	{ 'M',             0xB1 }, // 应用
+	{ 'B',             0xe047 }, // 应用
 };
 
 // --- LCDHandler Implementation (from your code) ---
@@ -146,7 +147,7 @@ LCD::LCD() {
 	LcdMagic.y_res = 240;
 	LcdMagic.pixel_bits = 32; // Using 32-bit color for easier rendering with Win32
 	LcdMagic.unk2_640 = 640;
-	LcdMagic.unk0_2 = 2;
+	LcdMagic.brightness_level = 2;
 	LcdMagic.unk1_0 = 8;
 	LcdMagic.window1_bufferstart = sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(&buffer));
 
@@ -298,6 +299,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				r = (r << 3) | (r >> 2);
 				g = (g << 3) | (g >> 2);
 				b = (b << 3) | (b >> 2);
+				auto level = sLCDHandler->brightness_level / 4.0 + 0.25; // 亮度等级
+				r *= level;
+				g *= level;
+				b *= level;
 				tempBuffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
 			}
 			BITMAPINFO bi = { 0 };

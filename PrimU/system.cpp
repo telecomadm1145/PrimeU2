@@ -4,7 +4,7 @@
 #include <chrono>
 #include <ctime>
 
-
+#include "PELoader.h"
 #include "executor.h"
 #include "LCD.h"
 #include "InterruptHandler.h"
@@ -23,6 +23,7 @@
 #include "ui.h"
 
 namespace fs = std::filesystem;
+
 
 // ====== 全局状态和工具函数 ======
 static std::mutex g_vfile_mutex;
@@ -133,6 +134,68 @@ static std::string MapVMPathToHostW(const wchar_t* vmPath) {
 	std::wstring ws(vmPath);
 	return MapVMPathToHost(wstr_to_utf8(ws).c_str());
 }
+static std::string MapHostPathToVM(const char* hostPath) {
+	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
+
+	if (!hostPath) {
+		// 没有路径，相当于返回当前虚拟机 CWD
+		char drive = static_cast<char>('A' + (g_currentDrive - 'A'));
+		return std::string(1, drive) + ":\\";
+	}
+
+	std::string s(hostPath);
+
+	// 如果是相对路径，基于当前 host CWD 转换成绝对路径
+	try {
+		fs::path p(s);
+		if (p.is_relative()) {
+			p = fs::current_path() / p;
+		}
+		s = normalize_slashes(fs::weakly_canonical(p).string());
+	}
+	catch (...) {
+		// 无法 canonical 化
+		s = normalize_slashes(s);
+	}
+
+	// 转成统一小写做比较（不改变最终返回的大小写）
+	std::string lower = s;
+	std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+		return (char)std::tolower(c);
+		});
+
+	// 检查是否匹配 prime_data\<Drive>
+    const std::string prefix = normalize_slashes("prime_data\\");
+	if (lower.size() > prefix.size() && lower.compare(0, prefix.size(), prefix) == 0) {
+		char drive = (char)std::toupper((unsigned char)lower[prefix.size()]);
+		size_t pos = prefix.size() + 1; // 跳过 "prime_data\<Drive>"
+		if (pos < lower.size() && (lower[pos] == '\\' || lower[pos] == '/')) {
+			pos++;
+		}
+		std::string rest = s.substr(pos);
+		return std::string(1, drive) + ":\\" + rest;
+	}
+
+	// 检查是否在某个 g_cwds 对应的目录下（绝对路径匹配 VM 当前驱动器根）
+	for (int i = 0; i < 26; ++i) {
+		std::string cwdPrefix = normalize_slashes(g_cwds[i]);
+		std::string lowerPrefix = cwdPrefix;
+		std::transform(lowerPrefix.begin(), lowerPrefix.end(), lowerPrefix.begin(), [](unsigned char c) {
+			return (char)std::tolower(c);
+			});
+
+		if (lower.size() >= lowerPrefix.size() &&
+			lower.compare(0, lowerPrefix.size(), lowerPrefix) == 0) {
+			std::string rest = s.substr(cwdPrefix.size());
+			char drive = (char)('A' + i);
+			return std::string(1, drive) + ":\\" + rest;
+		}
+	}
+
+	// 无法映射
+	return "";
+}
+
 
 // helper: 将 vm 指定的 filename 映射，确保父目录存在（当 write/create 时）
 static bool ensure_parent_dirs_for_hostpath(const std::string& hostPath) {
@@ -391,6 +454,108 @@ uint32_t _achdir(SystemServiceArguments* args)
 		catch (...) { return 0; }
 	}
 }
+
+uint32_t _wchdir(SystemServiceArguments* args)
+{
+	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
+
+	const wchar_t* vmname = __GET(wchar_t*, args->r0);
+	wprintf(L"    +wchdir VM name: %ls\n", vmname ? vmname : L"(null)");
+
+	if (!vmname || wcslen(vmname) == 0) return 0;
+
+	std::string s;
+	s.resize(wcslen(vmname),0);
+	for (size_t i = 0; i < wcslen(vmname); i++)
+	{
+		s[i] = vmname[i];
+	}
+	// trim
+	while (!s.empty() && iswspace(s.front())) s.erase(s.begin());
+	while (!s.empty() && iswspace(s.back())) s.pop_back();
+
+	// 指定 drive letter (X:\... 或 X:)
+	if (s.size() >= 1 && s.size() <= 2 && s[1] == L':') {
+		// "X:" 形式 -> 切换到驱动，但保持原来的 cwd for that drive
+		wchar_t drive = static_cast<wchar_t>(towupper(s[0]));
+		g_currentDrive = static_cast<char>(drive);
+		return 1;
+	}
+
+	if (s.size() >= 2 && s[1] == L':') {
+		// X:\something 或 X:relative
+		wchar_t drive = static_cast<wchar_t>(towupper(s[0]));
+		std::string rest = s.substr(2);
+		if (!rest.empty() && (rest[0] == '\\' || rest[0] == '/')) rest.erase(rest.begin());
+		std::string mapped = "prime_data\\" + std::string(1, drive) + "\\" + rest;
+		try {
+			fs::path p(mapped);
+			p = p.lexically_normal();
+			fs::create_directories(p);
+			std::string pstr = p.string();
+			g_cwds[drive - L'A'] = normalize_slashes(pstr) + ((pstr.back() == '\\') ? "" : "\\");
+			g_currentDrive = static_cast<char>(drive);
+			return 1;
+		}
+		catch (...) { return 0; }
+	}
+
+	// 以 '\' 开头的绝对 path (无 drive)
+	if (!s.empty() && (s[0] == '\\' || s[0] == '/')) {
+		std::string rest = s;
+		while (!rest.empty() && (rest[0] == '\\' || rest[0] == '/')) rest.erase(rest.begin());
+		std::string mapped = g_cwds[g_currentDrive - 'A'] + rest;
+		try {
+			fs::path p(mapped);
+			p = p.lexically_normal();
+			fs::create_directories(p);
+			std::string pstr = p.string();
+			g_cwds[g_currentDrive - 'A'] = normalize_slashes(pstr) + ((pstr.back() == '\\') ? "" : "\\");
+			return 1;
+		}
+		catch (...) { return 0; }
+	}
+
+	// 相对路径
+	{
+		std::string mapped = g_cwds[g_currentDrive - 'A'] + s;
+		try {
+			fs::path p(mapped);
+			p = p.lexically_normal();
+			fs::create_directories(p);
+			std::string pstr = p.string();
+			g_cwds[g_currentDrive - 'A'] = normalize_slashes(pstr) + ((pstr.back() == '\\') ? "" : "\\");
+			return 1;
+		}
+		catch (...) { return 0; }
+	}
+}
+uint32_t _wmkdir(SystemServiceArguments* args)
+{
+	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
+
+	const wchar_t* vmname = __GET(wchar_t*, args->r0);
+	wprintf(L"    +wmkdir VM name: %ls\n", vmname ? vmname : L"(null)");
+
+	try {
+		// MapVMPathToHostW 是 MapVMPathToHost 的宽字符版本
+		std::string hostPath = MapVMPathToHostW(vmname);
+		printf("    +Mapped host path: %s\n", hostPath.c_str());
+
+		fs::path p(hostPath);
+		if (!fs::exists(p))
+			fs::create_directories(p);
+
+		return 1;
+	}
+	catch (const std::exception& e) {
+		printf("    +wmkdir exception: %s\n", e.what());
+		return 0;
+	}
+}
+
+
+
 
 // 返回 active LCD 已存在实现中使用
 uint32_t GetActiveLCD(SystemServiceArguments* args)
@@ -680,12 +845,11 @@ uint32_t prgrmIsRunning(SystemServiceArguments* args)
 
 	return struc;
 }
-uint32_t getCurrentDir(SystemServiceArguments*) {
-	auto& cwd = g_cwds[g_currentDrive - 'A'];
+uint32_t GetCurrentExecutable(SystemServiceArguments*) {
+	auto cwd = std::string("\\\\?\\ROM");
 	VirtPtr vp;
 	sMemoryManager->DyanmicAlloc(&vp, cwd.size() + 1);
 	std::memcpy(__GET(void*, vp), cwd.c_str(), cwd.size() + 1);
-	printf("    +Current CWD: %s\n", cwd.c_str());
 	return vp;
 }
 
@@ -698,8 +862,22 @@ uint32_t _FindResourceW(SystemServiceArguments* args)
 
 uint32_t _LoadLibraryA(SystemServiceArguments* args)
 {
+	auto libname = __GET(char*, args->r0);
+	auto path = MapVMPathToHost(libname);
+	if (!fs::exists(path)) {
+		char system32_path[260] = "A:\\WINDOW\\SYSTEM\\";
+		strcat(system32_path, libname);
+		path = MapVMPathToHost(system32_path);
+	}
+	PEImage pei;
+	if (LoadPEImage(path, pei, MapVMPathToHost("A:\\WINDOW\\SYSTEM")) == ERROR_OK) {
+		return pei.actualImageBase;
+	}
+	else {
+		printf("LoadLibraryA failed!!!\n");
+	}
 	// TODO
-	printf("Warn: LoadLibraryA stub!!!\n");
+	// printf("Warn: LoadLibraryA stub!!!\n");
 	return 0;
 }
 
@@ -765,6 +943,7 @@ uint32_t OSCreateEvent(SystemServiceArguments* args)
 	return allocAddr;
 }
 uint32_t OSWaitForEvent(SystemServiceArguments* args) {
+
 	return 0;
 }
 uint32_t OSSuspendThread(SystemServiceArguments* args) {
@@ -784,8 +963,8 @@ uint32_t SysPowerOff(SystemServiceArguments* args) {
 
 uint32_t OSSetEvent(SystemServiceArguments* args)
 {
-	printf("OSSetEvent!\n");
-	// DUMPARGS;
+	auto evtPtr = __GET(EVENT*, args->r0);
+	evtPtr->unk1 = 1; // set to 1
 	return 0;
 }
 // TODO
@@ -796,6 +975,11 @@ uint32_t LCDOn(SystemServiceArguments* args)
 }
 uint32_t SetSystemVariable(SystemServiceArguments* args) {
 	printf("    + sys.var %d (type %d) <- %d\n", args->r0, args->r1, args->r2);
+	if (args->r0 == 6) {
+		if (args->r1 == 2) {
+			sLCDHandler->brightness_level = args->r2;
+		}
+	}
 	return 0;
 }
 
@@ -817,7 +1001,7 @@ uint32_t lcalloc(SystemServiceArguments* args)
 
 uint32_t lmalloc(SystemServiceArguments* args)
 {
-	// printf("    +size: %i\n", args->r0);
+	//printf("    +size: %i\n", args->r0);
 
 	VirtPtr addr;
 	if (sMemoryManager->DyanmicAlloc(&addr, args->r0) == ERROR_OK)
@@ -838,7 +1022,7 @@ uint32_t lrealloc(SystemServiceArguments* args)
 
 	// printf("    +addr: %08X, size: %X\n", ptr, new_size);
 	sMemoryManager->DynamicRealloc(&ptr, static_cast<size_t>(new_size));
-	// printf("    +new_addr: %08X\n", ptr);
+	//printf("    +new_addr: %08X\n", ptr);
 	return ptr;
 }
 
@@ -852,13 +1036,13 @@ uint32_t _lfree(SystemServiceArguments* args)
 
 uint32_t OSCreateThread(SystemServiceArguments* args)
 {
-	DUMPARGS;
+	//DUMPARGS;
 	return sThreadHandler->NewThread(args->r0, args->r4);
 }
 
 uint32_t OSSetThreadPriority(SystemServiceArguments* args)
 {
-	DUMPARGS;
+	//DUMPARGS;
 	sThreadHandler->SetThreadPriority(args->r0, args->r1);
 	return 0;
 }
@@ -882,8 +1066,8 @@ uint32_t GetSysTime(SystemServiceArguments* args)
 	auto now_c = std::chrono::system_clock::to_time_t(now);
 	tm* parts = std::localtime(&now_c);
 
-	sysTime->Year = parts->tm_yday;
-	sysTime->Month = parts->tm_mon;
+	sysTime->Year = parts->tm_year + 1900;
+	sysTime->Month = parts->tm_mon + 1;
 	sysTime->DayOfWeek = parts->tm_wday;
 	sysTime->Day = parts->tm_mday;
 	sysTime->Hour = parts->tm_hour;
@@ -1036,6 +1220,8 @@ uint32_t _fread(SystemServiceArguments* args)
 
 	void* dest = __GET(void*, destVPtr);
 	if (!dest) return 0;
+
+	printf("    +_fread path: %s, size: %u\n", it->second.hostPath.c_str(), size);
 
 	size_t read = fread(dest, 1, static_cast<size_t>(size), f);
 	if (read == 0) {
@@ -1323,9 +1509,11 @@ short find_next_internal(VirtPtr ctx_vptr) {
 		// Populate guest context structure
 		std::error_code ec;
 		guest_ctx->size = fs::is_regular_file(entry.status(ec)) ? fs::file_size(entry, ec) : 0;
-		guest_ctx->mtime = pack_dos_datetime(fs::last_write_time(entry, ec));
-		guest_ctx->btime = fs::exists(entry.path(), ec) && !ec ? pack_dos_datetime(fs::last_write_time(entry, ec)) : 0; // Placeholder for btime
-		guest_ctx->atime = guest_ctx->mtime; // Placeholder for atime
+		//guest_ctx->mtime = pack_dos_datetime(fs::last_write_time(entry, ec));
+		//guest_ctx->btime = fs::exists(entry.path(), ec) && !ec ? pack_dos_datetime(fs::last_write_time(entry, ec)) : 0; // Placeholder for btime
+		//guest_ctx->atime = guest_ctx->mtime; // Placeholder for atime
+
+		guest_ctx->atime = guest_ctx->mtime = guest_ctx->btime = 0;// pack_dos_datetime(fs::last_write_time(entry, ec));
 
 		guest_ctx->attrib = fat_attribs;
 		guest_ctx->attrib_mask = (unsigned char)internal_ctx.attrib_mask;
@@ -1540,15 +1728,12 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 	uint32_t* retlen = __GET(uint32_t*, *__GET(int*, args->sp + 16));
 	void* overlapped = __GET(void*, *__GET(int*, args->sp + 20));
 
-	//std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
-	//	<< " request:" << request
-	//	<< " size:" << size << "\n";
 
 	//// 打印 ioctl 缓冲区内容
 	//std::cout << "    ioctl buffer dump:\n";
 	//HexDump(in, size);
 	if (g_vdev_table.find(handle) == g_vdev_table.end()) {
-		// std::cerr << "    +DeviceIoControl_stub: Invalid handle " << handle << "\n";
+		std::cerr << "    +DeviceIoControl_stub: Invalid handle " << handle << "\n";
 		return 0; // Invalid handle
 	}
 	if (g_vdev_table[handle].ends_with("BAT")) {
@@ -1557,6 +1742,9 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 		voltage[0] = voltage[1] = voltage[2] = voltage[3] = 4;
 		return 1;
 	}
+	std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
+	<< " request:" << request
+	<< " size:" << size << "\n";
 	memset(out, 0xff, outlen); // 清空输出缓冲区
 	return 1; // Simulate success
 }
@@ -1642,11 +1830,36 @@ uint32_t GetEvent(SystemServiceArguments* args)
 
 	return 0;
 }
-uint32_t GetMasterIDInfo(SystemServiceArguments* args) {
-	auto ptr = __GET(char*, args->r0);
-	//auto sz = args->r1;
-	memcpy(ptr + 58, "HPPRIMEEMU", 12);
+#pragma pack(push, 1)
+typedef struct _MASTER_ID_INFO {
+	char a1[58];  // 前缀信息（可能是厂商ID、地区码等）
+	char a2[36];        // offset 0x58 处的序列号
+	//char master_id_suffix[30]; // 剩余部分（可能是校验或附加信息）
+	char a3[78];        // 从属ID（MAC、IMEI 或其他）
+} MASTER_ID_INFO;
+#pragma pack(pop)
 
+uint32_t GetMasterIDInfo(SystemServiceArguments* args) {
+	auto ptr = __GET(_MASTER_ID_INFO*, args->r0);
+	memset(ptr, 0, sizeof(_MASTER_ID_INFO));
+	strcpy(ptr->a2, "HPPRIMEEMU");
+	strcpy(ptr->a3, "BESTARTOS114514");
 	return 0;
 }
 
+
+uint32_t _GetModuleFileNameA(SystemServiceArguments* args) {
+	auto ptr = __GET(char*, args->r1);
+	auto sz = args->r2;
+	auto img = GetPEImageByHandle(args->r0);
+	auto vmpath = MapHostPathToVM(img->path.c_str());
+	if (vmpath.size() >= sz)
+		return sz;
+	strcpy(ptr, vmpath.c_str());
+	return vmpath.size();
+}
+
+
+void sys_init() {
+	g_cwds[0] = "A:\\WINDOW\\SYSTEM";
+}

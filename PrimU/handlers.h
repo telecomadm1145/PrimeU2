@@ -4,11 +4,12 @@
 
 class Memory;
 
+void sys_init();
 
 uint32_t dbgMsg(SystemServiceArguments* args);
 
 
-uint32_t getCurrentDir(SystemServiceArguments* args);
+uint32_t GetCurrentExecutable(SystemServiceArguments* args);
 uint32_t prgrmIsRunning(SystemServiceArguments* args);
 uint32_t _FindResourceW(SystemServiceArguments* args);
 uint32_t _OpenFile(SystemServiceArguments* args);
@@ -41,6 +42,8 @@ uint32_t lrealloc(SystemServiceArguments* args);
 
 uint32_t _amkdir(SystemServiceArguments* args);
 uint32_t _achdir(SystemServiceArguments* args);
+uint32_t _wchdir(SystemServiceArguments* args);
+uint32_t _wmkdir(SystemServiceArguments* args);
 uint32_t __wfopen(SystemServiceArguments* args);
 
 uint32_t OSCreateThread(SystemServiceArguments* args);
@@ -68,6 +71,8 @@ uint32_t _findclose(SystemServiceArguments* args);
 uint32_t GetEvent(SystemServiceArguments* args);
 
 uint32_t GetMasterIDInfo(SystemServiceArguments* args);
+
+uint32_t _GetModuleFileNameA(SystemServiceArguments* args);
 
 uint32_t _aremove(SystemServiceArguments* args);
 

@@ -12,7 +12,7 @@ struct LCD_MAGIC
     uint16_t y_res;
     uint16_t pixel_bits;
     uint16_t unk2_640;
-    uint16_t unk0_2;
+    uint16_t brightness_level;
     uint32_t unk1_0;
     uint32_t window1_bufferstart;
 };
@@ -58,6 +58,9 @@ public:
     static LCDHandler* GetInstance() { return !_instance ? _instance = new LCDHandler : _instance; }
 
     VirtPtr GetActiveLCDPtr() const;
+
+    uint16_t brightness_level = 2;
+
 private:
     LCDHandler();
     ~LCDHandler();

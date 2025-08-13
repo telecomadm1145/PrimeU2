@@ -179,6 +179,7 @@
     <ClInclude Include="MemoryChunk.h" />
     <ClInclude Include="MemoryManager.h" />
     <ClInclude Include="MemoryBlock.h" />
+    <ClInclude Include="PELoader.h" />
     <ClInclude Include="SystemAPI.h" />
     <ClInclude Include="Thread.h" />
     <ClInclude Include="ThreadHandler.h" />
@@ -196,6 +197,7 @@
     <ClCompile Include="LCD.cpp" />
     <ClCompile Include="MemoryChunk.cpp" />
     <ClCompile Include="MemoryManager.cpp" />
+    <ClCompile Include="PELoader.cpp" />
     <ClCompile Include="PrimU.cpp" />
     <ClCompile Include="system.cpp" />
     <ClCompile Include="MemoryBlock.cpp" />

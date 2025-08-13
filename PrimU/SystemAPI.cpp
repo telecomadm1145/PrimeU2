@@ -290,7 +290,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_LoadProgramA, HANDLE_NAMEONLY, "LoadProgramA", nullptr);
 	REGISTER_HANDLER(SDKLIB_FreeProgram, HANDLE_NAMEONLY, "FreeProgram", nullptr);
 	REGISTER_HANDLER(SDKLIB_ExecuteProgram, HANDLE_NAMEONLY, "ExecuteProgram", nullptr);
-	REGISTER_HANDLER(SDKLIB_GetCurrentPathA, HANDLE_IMPLEMENTED, "GetCurrentPathA", getCurrentDir);
+	REGISTER_HANDLER(SDKLIB_GetCurrentPathA, HANDLE_IMPLEMENTED, "GetCurrentPathA", GetCurrentExecutable);
 	REGISTER_HANDLER(SDKLIB_ProgramIsRunningA, HANDLE_IMPLEMENTED, "ProgramIsRunningA", prgrmIsRunning);
 	REGISTER_HANDLER(SDKLIB_FindApplications, HANDLE_NAMEONLY, "FindApplications", nullptr);
 	REGISTER_HANDLER(SDKLIB_FreeFindApplications, HANDLE_NAMEONLY, "FreeFindApplications", nullptr);
@@ -633,16 +633,16 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__wfcreate, HANDLE_NAMEONLY, "_wfcreate", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfcreateSz, HANDLE_NAMEONLY, "_wfcreateSz", nullptr);
 	REGISTER_HANDLER(SDKLIB___wfopen, HANDLE_IMPLEMENTED, "__wfopen", __wfopen);
-	REGISTER_HANDLER(SDKLIB__wfindfirst, HANDLE_NAMEONLY, "_wfindfirst", nullptr);
-	REGISTER_HANDLER(SDKLIB__wfindnext, HANDLE_NAMEONLY, "_wfindnext", nullptr);
+	REGISTER_HANDLER(SDKLIB__wfindfirst, HANDLE_NAMEONLY, "_wfindfirst", _wfindfirst);
+	REGISTER_HANDLER(SDKLIB__wfindnext, HANDLE_NAMEONLY, "_wfindnext", _wfindnext);
 	REGISTER_HANDLER(SDKLIB__wfgetattr, HANDLE_NAMEONLY, "_wfgetattr", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfsetattr, HANDLE_NAMEONLY, "_wfsetattr", nullptr);
 	REGISTER_HANDLER(SDKLIB___wremove, HANDLE_NAMEONLY, "__wremove", _wremove);
 	REGISTER_HANDLER(SDKLIB__wrename, HANDLE_NAMEONLY, "_wrename", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfcopy, HANDLE_NAMEONLY, "_wfcopy", nullptr);
-	REGISTER_HANDLER(SDKLIB__wmkdir, HANDLE_NAMEONLY, "_wmkdir", nullptr);
+	REGISTER_HANDLER(SDKLIB__wmkdir, HANDLE_NAMEONLY, "_wmkdir", _wmkdir);
 	REGISTER_HANDLER(SDKLIB__wrmdir, HANDLE_NAMEONLY, "_wrmdir", nullptr);
-	REGISTER_HANDLER(SDKLIB__wchdir, HANDLE_NAMEONLY, "_wchdir", nullptr);
+	REGISTER_HANDLER(SDKLIB__wchdir, HANDLE_NAMEONLY, "_wchdir", _wchdir);
 	REGISTER_HANDLER(SDKLIB__wgetcurdir, HANDLE_NAMEONLY, "_wgetcurdir", nullptr);
 	REGISTER_HANDLER(SDKLIB__afsettime, HANDLE_NAMEONLY, "_afsettime", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfsettime, HANDLE_NAMEONLY, "_wfsettime", nullptr);
@@ -656,7 +656,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_LoadHFileProgramW, HANDLE_NAMEONLY, "LoadHFileProgramW", nullptr);
 	REGISTER_HANDLER(SDKLIB_LoadHFileProgramA, HANDLE_NAMEONLY, "LoadHFileProgramA", nullptr);
 	REGISTER_HANDLER(SDKLIB__LoadLibraryA, HANDLE_IMPLEMENTED, "_LoadLibraryA", _LoadLibraryA);
-	REGISTER_HANDLER(SDKLIB__GetModuleFileNameA, HANDLE_NAMEONLY, "_GetModuleFileNameA", nullptr);
+	REGISTER_HANDLER(SDKLIB__GetModuleFileNameA, HANDLE_NAMEONLY, "_GetModuleFileNameA", _GetModuleFileNameA);
 	REGISTER_HANDLER(SDKLIB__GetModuleHandleA, HANDLE_NAMEONLY, "_GetModuleHandleA", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetApplicationProcA, HANDLE_NAMEONLY, "GetApplicationProcA", nullptr);
 	REGISTER_HANDLER(SDKLIB_StayResidentProgramA, HANDLE_NAMEONLY, "StayResidentProgramA", nullptr);
@@ -751,6 +751,8 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB___write, HANDLE_NAMEONLY, "__write", nullptr);
 	REGISTER_HANDLER(SDKLIB__MultiByteToWideChar, HANDLE_NAMEONLY, "_MultiByteToWideChar", nullptr);
 	REGISTER_HANDLER(SDKLIB__WideCharToMultiByte, HANDLE_NAMEONLY, "_WideCharToMultiByte", nullptr);
+
+	sys_init();
 }
 
 void SystemAPI::RegisterHandler(InterruptHandler* handler)
@@ -769,7 +771,7 @@ uint32_t SystemAPI::Call(InterruptID id, SystemServiceArguments args)
 		auto _handle = _handler->second;
 
 		if (_handle->Callback) {
-			//printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
+			printf("[%05X] %s() called by thread [%i]\n", _handle->Id, _handle->Name, sThreadHandler->GetCurrentThreadId());
 			//printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", args.r0, args.r0, args.r1,
 			//	args.r1, args.r2, args.r2, args.r3, args.r3, args.r4, args.r4, args.sp);
 			auto ret = _handle->Callback(&args);

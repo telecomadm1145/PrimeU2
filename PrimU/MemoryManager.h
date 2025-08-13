@@ -11,7 +11,7 @@
 
 // 预分配的动态堆（虚拟堆）位置与大小
 constexpr VirtPtr MEM_DYNAMIC_HEAP_BASE = 0x20000000;
-constexpr size_t  MEM_DYNAMIC_HEAP_SIZE = 32 * 1024 * 1024; // 32MB
+constexpr size_t  MEM_DYNAMIC_HEAP_SIZE = 0x10000000; // 32MB
 
 class MemoryManager
 {
@@ -26,6 +26,8 @@ public:
     // 静态映射：将一段主机内存映射到指定虚拟地址区间（一次性映射，不做子分配）
     ErrorCode StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** memoryBlock = nullptr);
     ErrorCode StaticFree(VirtPtr addr);
+
+    void WriteCookie(VirtPtr addr);
 
     // 动态分配：仅在预映射的 32MB 虚拟堆内做子分配（不触发新的 uc_mem_map/uc_mem_unmap）
     ErrorCode DyanmicAlloc(VirtPtr* addr, size_t size);
@@ -81,6 +83,8 @@ private:
     }
 
     bool OverlapsAnyMappedBlock(VirtPtr addr, size_t size) const;
+
+    void CheckCookie(VirtPtr addr);
 
     // 虚拟堆子分配/释放/合并
     ErrorCode HeapAlloc(VirtPtr* out, size_t size);

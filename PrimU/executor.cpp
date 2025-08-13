@@ -195,6 +195,7 @@ bool Executor::Initialize(Executable* exec)
 	__check(exec->Load(), ERROR_OK, false);
 
 	__check(sMemoryManager->StaticAlloc(LCD_REGISTER, LCD_REGISTER_SIZE), ERROR_OK, false);
+	__check(sMemoryManager->StaticAlloc(0x51000000, 0x44), ERROR_OK, false);
 
 	__check(InitInterrupts(), true, false);
 
@@ -203,6 +204,7 @@ bool Executor::Initialize(Executable* exec)
 
 uc_hook m_page_fault;
 uc_hook m_page_fault2;
+uc_hook m_page_fault3;
 void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 
 	uint32_t r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, sp, pc, lr;
@@ -210,7 +212,7 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 	int regs[16] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
-
+	__debugbreak();
 	printf("Page fault triggered! \nThread: %i\nRegisters: \n", sThreadHandler->GetCurrentThreadId());
 	printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n"
 		"    r5: %08X|%i\n    r6: %08X|%i\n    r7: %08X|%i\n    r8: %08X|%i\n    r9: %08X|%i\n"
@@ -244,8 +246,8 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 	if (cs_open(CS_ARCH_ARM, mode, &handle) == CS_ERR_OK)
 	{
 		// 可配置的上下文字节数（前/后）
-		const size_t CONTEXT_BYTES_BEFORE = 32;
-		const size_t CONTEXT_BYTES_AFTER = 64;
+		const size_t CONTEXT_BYTES_BEFORE = 0;
+		const size_t CONTEXT_BYTES_AFTER = 8;
 		const size_t DISASM_SIZE = CONTEXT_BYTES_BEFORE + CONTEXT_BYTES_AFTER;
 
 		uint64_t start_addr = (pc_addr > CONTEXT_BYTES_BEFORE) ? (pc_addr - CONTEXT_BYTES_BEFORE) : 0;
@@ -306,6 +308,7 @@ bool Executor::Cleanup()
 	callAndcheckError(uc_hook_del(m_uc, _codeHook));
 	callAndcheckError(uc_hook_del(m_uc, m_page_fault));
 	callAndcheckError(uc_hook_del(m_uc, m_page_fault2));
+	callAndcheckError(uc_hook_del(m_uc, m_page_fault3));
 	__check(sMemoryManager->StaticFree(LCD_REGISTER), ERROR_OK, false);
 	callAndcheckError(uc_close(m_uc));
 }
@@ -318,6 +321,7 @@ bool Executor::InitInterrupts()
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_READ_UNMAPPED, pf, 0, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault2, UC_HOOK_MEM_WRITE_UNMAPPED, pf, 0, 1, 0));
+	callAndcheckError(uc_hook_add(m_uc, &m_page_fault3, UC_HOOK_MEM_FETCH_UNMAPPED, pf, 0, 1, 0));
 	return true;
 }
 void Executor::Execute()
@@ -346,8 +350,28 @@ void Executor::Execute()
 		//	sThreadHandler->interruptPC = 0;
 		//}
 
-		if (m_err != UC_ERR_OK)
-			break;
+		if (m_err != UC_ERR_OK) {
+			uint32_t cpsr = 0;
+			uint32_t pc = 0;
+			if (uc_reg_read(m_uc, UC_ARM_REG_CPSR, &cpsr) != UC_ERR_OK) {
+				cpsr = 0; // 无法读取时保守处理
+			}
+			uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
+			// 判断是否为 Thumb：PC 低位为 1 或 CPSR.T 位被置位
+			bool is_thumb = ((pc & 1) != 0) || ((cpsr & (1u << 5)) != 0);
+
+			// 用于从内存读取的对齐 PC（清除低位）
+			uint64_t pc_addr = (uint64_t)(pc & ~1u);
+			if (is_thumb) {
+				pc_addr += 2;
+			}
+			else {
+				pc_addr += 4;
+			}
+			uc_reg_write(m_uc, UC_ARM_REG_PC, &pc_addr);
+			sThreadHandler->SaveCurrentThreadState();
+		}
+			//break;
 		sThreadHandler->SwitchThread();
 	}
 
