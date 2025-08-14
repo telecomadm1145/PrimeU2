@@ -103,6 +103,16 @@ public:
     uint32_t GetCurrentPC() const { return _state->GetCurrentAddr(); }
     uint8_t GetPriority() const { return _priority; }
 
+    // Event API
+    struct Event* CreateEvent(bool bManualReset, bool bInitialState);
+    void SetEvent(Event* ev);
+    void ResetEvent(Event* ev);
+    void WaitForEvent(Event* ev, int timeoutMillis); // timeout in ms, <0 = infinite, 0 = poll
+
+    // Suspend / Resume
+    void Suspend();
+    void Resume();
+
     bool CanRun();
     int GetId() const { return _id; }
 
@@ -118,6 +128,14 @@ private:
 
     Thread* _nextThread;
     CriticalSection* _requested = nullptr;
+    std::unordered_map<CriticalSection*, int> _ownedCriticalSections;
+
+    Event* _waitingEvent = nullptr; // 当前正在等待的事件（或 nullptr）
+    std::chrono::high_resolution_clock::time_point _waitTimeoutEnd;
+    bool _waitingInfinite = false;  // timeout < 0 表示无限等待
+
+    int _suspendCount = 0;      // 嵌套 suspend 的计数
+    bool _isSuspended = false;
 
     std::chrono::high_resolution_clock::time_point _sleepEnd;
     bool _isSleeping = false;

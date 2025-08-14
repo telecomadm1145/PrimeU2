@@ -10,7 +10,7 @@
 
 // 定义堆分配前后缀的 "cookie" 或 "canary"
 // 用于检测缓冲区溢出/下溢
-static const uint32_t kHeapCookie = 0xacc1c0120;
+static const uint64_t kHeapCookie = 0xacc1c01201110210ull;
 static const size_t   kCookieSize = sizeof(kHeapCookie);
 
 MemoryManager* MemoryManager::_instance = nullptr;
@@ -144,7 +144,7 @@ ErrorCode MemoryManager::StaticFree(VirtPtr addr)
 void MemoryManager::WriteCookie(VirtPtr addr) {
 	RealPtr realAddr = GetRealAddr(addr);
 	if (realAddr) {
-		*reinterpret_cast<uint32_t*>(realAddr) = kHeapCookie;
+		*reinterpret_cast<uint64_t*>(realAddr) = kHeapCookie;
 	}
 }
 
@@ -155,7 +155,7 @@ void MemoryManager::CheckCookie(VirtPtr addr) {
 		fprintf(stderr, "FATAL: Heap corruption check failed. Cookie address 0x%08x is not mapped.\n", addr);
 		abort();
 	}
-	uint32_t value = *reinterpret_cast<uint32_t*>(realAddr);
+	uint64_t value = *reinterpret_cast<uint64_t*>(realAddr);
 	if (value != kHeapCookie) {
 		fprintf(stderr, "FATAL: Heap corruption detected at address 0x%08x! Expected cookie 0x%08x, found 0x%08x.\n", addr, kHeapCookie, value);
 		abort();

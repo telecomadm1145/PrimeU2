@@ -212,7 +212,8 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 	int regs[16] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
-	__debugbreak();
+
+	// __debugbreak();
 	printf("Page fault triggered! \nThread: %i\nRegisters: \n", sThreadHandler->GetCurrentThreadId());
 	printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n"
 		"    r5: %08X|%i\n    r6: %08X|%i\n    r7: %08X|%i\n    r8: %08X|%i\n    r9: %08X|%i\n"
@@ -246,8 +247,8 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 	if (cs_open(CS_ARCH_ARM, mode, &handle) == CS_ERR_OK)
 	{
 		// 可配置的上下文字节数（前/后）
-		const size_t CONTEXT_BYTES_BEFORE = 0;
-		const size_t CONTEXT_BYTES_AFTER = 8;
+		const size_t CONTEXT_BYTES_BEFORE = 32;
+		const size_t CONTEXT_BYTES_AFTER = 32;
 		const size_t DISASM_SIZE = CONTEXT_BYTES_BEFORE + CONTEXT_BYTES_AFTER;
 
 		uint64_t start_addr = (pc_addr > CONTEXT_BYTES_BEFORE) ? (pc_addr - CONTEXT_BYTES_BEFORE) : 0;

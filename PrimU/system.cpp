@@ -21,6 +21,7 @@
 #include <vector>
 #include "handlers.h"
 #include "ui.h"
+#include "Thread.h"
 
 namespace fs = std::filesystem;
 
@@ -165,7 +166,7 @@ static std::string MapHostPathToVM(const char* hostPath) {
 		});
 
 	// 检查是否匹配 prime_data\<Drive>
-    const std::string prefix = normalize_slashes("prime_data\\");
+	const std::string prefix = normalize_slashes("prime_data\\");
 	if (lower.size() > prefix.size() && lower.compare(0, prefix.size(), prefix) == 0) {
 		char drive = (char)std::toupper((unsigned char)lower[prefix.size()]);
 		size_t pos = prefix.size() + 1; // 跳过 "prime_data\<Drive>"
@@ -465,7 +466,7 @@ uint32_t _wchdir(SystemServiceArguments* args)
 	if (!vmname || wcslen(vmname) == 0) return 0;
 
 	std::string s;
-	s.resize(wcslen(vmname),0);
+	s.resize(wcslen(vmname), 0);
 	for (size_t i = 0; i < wcslen(vmname); i++)
 	{
 		s[i] = vmname[i];
@@ -888,21 +889,23 @@ uint32_t _FreeLibrary(SystemServiceArguments* args)
 	return 0;
 }
 
+std::map<int, std::unique_ptr<CriticalSection>> g_cs;
+
 uint32_t OSInitCriticalSection(SystemServiceArguments* args)
 {
-	sThreadHandler->InitCriticalSection(__GET(CriticalSection*, args->r0));
+	g_cs[args->r0] = std::make_unique<CriticalSection>();
 	return args->r0;
 }
 
 uint32_t OSEnterCriticalSection(SystemServiceArguments* args)
 {
-	sThreadHandler->CurrentThreadEnterCriticalSection(__GET(CriticalSection*, args->r0));
+	sThreadHandler->CurrentThreadEnterCriticalSection(g_cs[args->r0].get());
 	return args->r0;
 }
 
 uint32_t OSLeaveCriticalSection(SystemServiceArguments* args)
 {
-	sThreadHandler->CurrentThreadExitCriticalSection(__GET(CriticalSection*, args->r0));
+	sThreadHandler->CurrentThreadExitCriticalSection(g_cs[args->r0].get());
 	return args->r0;
 }
 
@@ -928,22 +931,17 @@ struct EVENT
 	uint8_t unk11;
 };
 
-
+std::map<uint32_t, std::unique_ptr<Event>> g_events;
+uint32_t g_next_event_id = 1;
 // TODO
 uint32_t OSCreateEvent(SystemServiceArguments* args)
 {
-	VirtPtr allocAddr;
-	sMemoryManager->DyanmicAlloc(&allocAddr, 0x14);
-	EVENT* ptr = __GET(EVENT*, allocAddr);
-	new (ptr) EVENT();
-
-	ptr->unk1 = args->r1;
-	ptr->unk2 = args->r0;
-
-	return allocAddr;
+	g_events[g_next_event_id] = std::unique_ptr<Event>(sThreadHandler->GetCurrentThread().CreateEvent(args->r0, args->r1));
+	return g_next_event_id++;
 }
 uint32_t OSWaitForEvent(SystemServiceArguments* args) {
-
+	auto& event = *g_events[args->r0];
+	sThreadHandler->GetCurrentThread().WaitForEvent(&event, args->r1);
 	return 0;
 }
 uint32_t OSSuspendThread(SystemServiceArguments* args) {
@@ -963,8 +961,8 @@ uint32_t SysPowerOff(SystemServiceArguments* args) {
 
 uint32_t OSSetEvent(SystemServiceArguments* args)
 {
-	auto evtPtr = __GET(EVENT*, args->r0);
-	evtPtr->unk1 = 1; // set to 1
+	auto& event = *g_events[args->r0];
+	sThreadHandler->GetCurrentThread().SetEvent(&event);
 	return 0;
 }
 // TODO
@@ -1075,7 +1073,7 @@ uint32_t GetSysTime(SystemServiceArguments* args)
 	sysTime->Second = parts->tm_sec;
 	auto totalMSec = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
 	sysTime->Milliseconds = static_cast<uint16_t>(totalMSec % 1000);
-	sThreadHandler->CurrentThreadYield();
+
 	return args->r0;
 }
 
@@ -1743,8 +1741,8 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 		return 1;
 	}
 	std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
-	<< " request:" << request
-	<< " size:" << size << "\n";
+		<< " request:" << request
+		<< " size:" << size << "\n";
 	memset(out, 0xff, outlen); // 清空输出缓冲区
 	return 1; // Simulate success
 }
@@ -1773,6 +1771,7 @@ uint32_t InterruptDone(SystemServiceArguments* args) {
 
 uint32_t BatteryLowCheck(SystemServiceArguments* args) {
 	//sThreadHandler->CurrentThreadSleep(1000);
+	sThreadHandler->CurrentThreadYield();
 	return 0; // Battery OK!
 }
 

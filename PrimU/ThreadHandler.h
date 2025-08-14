@@ -2,17 +2,34 @@
 #define THREAD_HANDLER_H
 
 #include "common.h"
+#include <queue>
+
+class Thread;
 
 struct CriticalSection
 {
 	uint32_t isLocked = 0;
-	int32_t ownerHandle = 0;
-	int32_t ContentionCount = 0;
-	uint32_t SectionHandle = 0;
-	uint32_t UNUSED_1 = 0;
+	int ownerHandle = -1;
+	int recursionCount = 0;
+	std::deque<Thread*> waiters;
+	int contentionCount = 0;
 };
 
-class Thread;
+
+// 前提：Thread 类已经存在，这里只展示需要新增/修改的成员和方法实现
+class Event; // forward
+
+// Event 本体 —— 单核 VM 版本
+struct Event {
+	bool manualReset;            // true = manual reset, false = auto reset
+	bool signaled;               // 当前是否为信号状态
+	std::deque<Thread*> waiters; // FIFO 等待队列（线程指针）
+	int contentionCount = 0;     // 等待者计数（等于 waiters.size()）
+
+	Event(bool manual, bool initial)
+		: manualReset(manual), signaled(initial), waiters(), contentionCount(0) {
+	}
+};
 
 class StateManager
 {
@@ -41,6 +58,9 @@ public:
 	void CurrentThreadEnterCriticalSection(CriticalSection* criticalSection);
 	void CurrentThreadExitCriticalSection(CriticalSection* criticalSection);
 	void CurrentThreadSleep(uint32_t time);
+	Thread& GetCurrentThread() {
+		return *_currentThread;
+	}
 
 	bool interrupting = false;
 	bool pausing = false;

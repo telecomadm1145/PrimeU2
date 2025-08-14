@@ -92,11 +92,7 @@ bool StateManager::CanCurrentThreadRun()
 
 void StateManager::InitCriticalSection(CriticalSection* criticalSection)
 {
-	static int32_t critId = 0;
-	criticalSection = new (criticalSection) CriticalSection();
-	criticalSection->SectionHandle = critId;
-
-	critId++;
+	__debugbreak();
 }
 
 
