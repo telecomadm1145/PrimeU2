@@ -64,3 +64,4 @@ This project is released under the **GPL v2**.
 * [ripem](https://github.com/boricj/ripem)
 * [Linux-For-HPPrime-V2](https://github.com/Repeerc/Linux-For-HPPrime-V2)
 * [prinux (G2)](https://github.com/zephray/prinux)
+* [Project-Muteki](https://github.com/Project-Muteki)
