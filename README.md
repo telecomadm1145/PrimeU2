@@ -1,41 +1,66 @@
-PrimU2
-=====
+# PrimU2
 
-PrimU2 is a prototype emulator for the HP Prime calculator based on [Unicorn Engine](https://github.com/unicorn-engine/unicorn).
+**PrimU2** is a prototype High-Level Emulator (HLE) for the **HP Prime** calculator (V1 / V2 / G1) built on top of the [Unicorn Engine](https://github.com/unicorn-engine/unicorn).
 
-The program is currently so early in development that there are essentially  no features implemented. 
-PrimU is currently targeting HP Prime Firmware version 20130808 as it contains the most debugging information.
+PrimU2 currently targets the HP Prime firmware **20130808**, because that version does not require `armfir.dat` to be loaded into RAM.
 
+---
 
-Compiling
----------
-Visual Studio 2022 or later is needed for compilation.
+## What works
 
-Just open `PrimU.sln` and build.
+* Filesystem (virtualized, rooted at `.\prime_data`)
+* LCD
+* Threading
+* PE Loader
+* ELF Loader
+* Power Off
+* UI Events (buggy touch support, full keypad support)
+* And many other things...
 
-Running
--------
-In order to run PrimU one must first extract the `armfir.elf` file from the 201308080 firmware update for the calculator.
-This can be done by mounting the FAT-16 filesystem present present at an 8kb offset inside the APPDISK.DAT file from the firmware update.
-See [this](https://tiplanet.org/hpwiki/index.php?title=HP_Prime/Firmware_files) wiki for more information.
+## What doesn't work
 
-Once the file is extracted, PrimU can be run with the following command:
+* GDI-style drawing API
+* Hardware interrupts
+* `_OpenFile` and other loader API for reading `armfir.dat`
+* Firmware randomly crashes occasionally
+* Cross-platform support
 
-    PrimU.exe [path/to/armfir.elf]
+---
 
-License
--------
+## Compiling
 
-This project is released under the [GPL license](COPYING).
+Visual Studio 2022 or later is required.
 
-See Also
-------
-[PrimeU](https://github.com/opcod3/PrimeU)
+1. Open `PrimU.sln` in Visual Studio.
+2. Build the solution.
 
-[qemuPrime](https://github.com/Gigi1237/qemuPrime)
+---
 
-[ripem](https://github.com/boricj/ripem)
+## Running
 
-[Linux-For-HPPrime-V2](https://github.com/Repeerc/Linux-For-HPPrime-V2)
+You must first extract `armfir.elf` from the **201308080** firmware update for the calculator.
 
-[prinux(G2)](https://github.com/zephray/prinux)
+> The `armfir.elf` file is contained inside the firmware update: the APPDISK.DAT file contains a FAT-16 filesystem starting at an 8 KB offset. Mount that filesystem (or extract it with a suitable tool) to obtain `armfir.elf`. See the HP Prime firmware wiki for more details:
+> [https://tiplanet.org/hpwiki/index.php?title=HP\_Prime/Firmware\_files](https://tiplanet.org/hpwiki/index.php?title=HP_Prime/Firmware_files)
+
+Once you have `armfir.elf`, run PrimU with:
+
+```bash
+PrimU.exe [path/to/armfir.elf]
+```
+
+---
+
+## License
+
+This project is released under the **GPL**. See `COPYING` for the full license text.
+
+---
+
+## See also
+
+* [PrimeU](https://github.com/opcod3/PrimeU)
+* [qemuPrime](https://github.com/Gigi1237/qemuPrime)
+* [ripem](https://github.com/boricj/ripem)
+* [Linux-For-HPPrime-V2](https://github.com/Repeerc/Linux-For-HPPrime-V2)
+* [prinux (G2)](https://github.com/zephray/prinux)
