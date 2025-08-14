@@ -1,9 +1,7 @@
-PrimU
+PrimU2
 =====
 
-## WARNING THIS IS OBSOLETE. SUPERCEDED BY https://github.com/Gigi1237/qemuPrime 
-
-PrimU is a prototype emulator for the HP Prime calculator based on [Unicorn Engine](https://github.com/unicorn-engine/unicorn).
+PrimU2 is a prototype emulator for the HP Prime calculator based on [Unicorn Engine](https://github.com/unicorn-engine/unicorn).
 
 The program is currently so early in development that there are essentially  no features implemented. 
 PrimU is currently targeting HP Prime Firmware version 20130808 as it contains the most debugging information.
@@ -11,14 +9,14 @@ PrimU is currently targeting HP Prime Firmware version 20130808 as it contains t
 
 Compiling
 ---------
-Visual Studio 2015 is needed for compilation.
+Visual Studio 2022 or later is needed for compilation.
 
 Just open `PrimU.sln` and build.
 
 Running
 -------
 In order to run PrimU one must first extract the `armfir.elf` file from the 201308080 firmware update for the calculator.
-This can be done by mounting the FAT-16 filesystem present present  at an 8kb offset inside the APPDISK.DAT file from the firmware update.
+This can be done by mounting the FAT-16 filesystem present present at an 8kb offset inside the APPDISK.DAT file from the firmware update.
 See [this](https://tiplanet.org/hpwiki/index.php?title=HP_Prime/Firmware_files) wiki for more information.
 
 Once the file is extracted, PrimU can be run with the following command:
@@ -29,3 +27,15 @@ License
 -------
 
 This project is released under the [GPL license](COPYING).
+
+See Also
+------
+[PrimeU](https://github.com/opcod3/PrimeU)
+
+[qemuPrime](https://github.com/Gigi1237/qemuPrime)
+
+[ripem](https://github.com/boricj/ripem)
+
+[Linux-For-HPPrime-V2](https://github.com/Repeerc/Linux-For-HPPrime-V2)
+
+[prinux(G2)](https://github.com/zephray/prinux)
