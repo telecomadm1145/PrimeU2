@@ -53,7 +53,7 @@ PrimU.exe [path/to/armfir.elf]
 
 ## License
 
-This project is released under the **GPL**. See `COPYING` for the full license text.
+This project is released under the **GPL v2**.
 
 ---
 
