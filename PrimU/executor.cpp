@@ -213,7 +213,7 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
 
-	// __debugbreak();
+	__debugbreak();
 	printf("Page fault triggered! \nThread: %i\nRegisters: \n", sThreadHandler->GetCurrentThreadId());
 	printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n"
 		"    r5: %08X|%i\n    r6: %08X|%i\n    r7: %08X|%i\n    r8: %08X|%i\n    r9: %08X|%i\n"

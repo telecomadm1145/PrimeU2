@@ -40,3 +40,5 @@ inline bool ReadFileToVector(const std::string& path, std::vector<uint8_t>& out)
     ifs.read(reinterpret_cast<char*>(out.data()), out.size());
     return ifs.good();
 }
+
+extern std::string runningApplicationImagePath;

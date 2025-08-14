@@ -29,6 +29,7 @@ ErrorCode Executable::Load()
     // 先尝试 ELF（保持原逻辑）
     {
         ELFIO::elfio reader;
+        runningApplicationImagePath = _path; // 设置全局变量，供其他函数使用
         if (reader.load(_path)) {
             __check(reader.get_class(), ELFCLASS32, ERROR_LOADER_INCORRECT_ATTRIBUTE);
             __check(reader.get_machine(), EM_ARM, ERROR_LOADER_INCORRECT_ATTRIBUTE);
@@ -66,6 +67,7 @@ ErrorCode Executable::Load()
     {
         PEImage img;
         std::string sysdir = std::string(".\\prime_data\\A\\WINDOW\\SYSTEM");
+		runningApplicationImagePath = _path; // 设置全局变量，供其他函数使用
         ErrorCode err = LoadPEImage(_path, img, sysdir);
         if (err != ERROR_OK) return err;
         // set Executable state (assumes _entry/_address/_size are accessible in this scope)

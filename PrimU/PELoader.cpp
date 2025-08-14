@@ -447,6 +447,8 @@ std::shared_ptr<PEImage> GetPEImageByHandle(uint32_t handle) {
     return nullptr;
 }
 
+std::string runningApplicationImagePath;
+
 // End of loader
 
 // -------------------------- Integration note --------------------------

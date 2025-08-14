@@ -206,8 +206,8 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_ReadFollowMe, HANDLE_NAMEONLY, "ReadFollowMe", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetPrivateState, HANDLE_NAMEONLY, "GetPrivateState", nullptr);
 	REGISTER_HANDLER(SDKLIB_SetPrivateState, HANDLE_NAMEONLY, "SetPrivateState", nullptr);
-	REGISTER_HANDLER(SDKLIB__afnsplit, HANDLE_NAMEONLY, "_afnsplit", nullptr);
-	REGISTER_HANDLER(SDKLIB__afnmerge, HANDLE_NAMEONLY, "_afnmerge", nullptr);
+	REGISTER_HANDLER(SDKLIB__afnsplit, HANDLE_NAMEONLY, "_afnsplit", _afnsplit);
+	REGISTER_HANDLER(SDKLIB__afnmerge, HANDLE_NAMEONLY, "_afnmerge", _afnmerge);
 	REGISTER_HANDLER(SDKLIB__afcreate, HANDLE_NAMEONLY, "_afcreate", nullptr);
 	REGISTER_HANDLER(SDKLIB__afcreateSz, HANDLE_NAMEONLY, "_afcreateSz", nullptr);
 	REGISTER_HANDLER(SDKLIB__afopen, HANDLE_NAMEONLY, "_afopen", nullptr);
@@ -248,11 +248,11 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__OpenFile, HANDLE_IMPLEMENTED, "_OpenFile", _OpenFile);
 	REGISTER_HANDLER(SDKLIB__OpenFileEx, HANDLE_NAMEONLY, "_OpenFileEx", nullptr);
 	REGISTER_HANDLER(SDKLIB__OpenFileW, HANDLE_NAMEONLY, "_OpenFileW", nullptr);
-	REGISTER_HANDLER(SDKLIB__CloseFile, HANDLE_NAMEONLY, "_CloseFile", nullptr);
-	REGISTER_HANDLER(SDKLIB__ReadFile, HANDLE_NAMEONLY, "_ReadFile", nullptr);
-	REGISTER_HANDLER(SDKLIB__FseekFile, HANDLE_NAMEONLY, "_FseekFile", nullptr);
-	REGISTER_HANDLER(SDKLIB__FileSize, HANDLE_NAMEONLY, "_FileSize", nullptr);
-	REGISTER_HANDLER(SDKLIB__OpenSubFile, HANDLE_NAMEONLY, "_OpenSubFile", nullptr);
+	REGISTER_HANDLER(SDKLIB__CloseFile, HANDLE_NAMEONLY, "_CloseFile", _CloseFile);
+	REGISTER_HANDLER(SDKLIB__ReadFile, HANDLE_NAMEONLY, "_ReadFile", _ReadFile);
+	REGISTER_HANDLER(SDKLIB__FseekFile, HANDLE_NAMEONLY, "_FseekFile", _FseekFile);
+	REGISTER_HANDLER(SDKLIB__FileSize, HANDLE_NAMEONLY, "_FileSize", _FileSize);
+	REGISTER_HANDLER(SDKLIB__OpenSubFile, HANDLE_NAMEONLY, "_OpenSubFile", _OpenSubFile);
 	REGISTER_HANDLER(SDKLIB__TellFile, HANDLE_NAMEONLY, "_TellFile", nullptr);
 	REGISTER_HANDLER(SDKLIB_DBSave, HANDLE_NAMEONLY, "DBSave", nullptr);
 	REGISTER_HANDLER(SDKLIB_DBSaveAll, HANDLE_NAMEONLY, "DBSaveAll", nullptr);
@@ -652,7 +652,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB_GetApplicationNameW, HANDLE_NAMEONLY, "GetApplicationNameW", nullptr);
 	REGISTER_HANDLER(SDKLIB_LoadProgramW, HANDLE_NAMEONLY, "LoadProgramW", nullptr);
 	REGISTER_HANDLER(SDKLIB_GetCurrentPathW, HANDLE_NAMEONLY, "GetCurrentPathW", nullptr);
-	REGISTER_HANDLER(SDKLIB_ProgramIsRunningW, HANDLE_NAMEONLY, "ProgramIsRunningW", nullptr);
+	REGISTER_HANDLER(SDKLIB_ProgramIsRunningW, HANDLE_NAMEONLY, "ProgramIsRunningW", ProgramIsRunningW);
 	REGISTER_HANDLER(SDKLIB_LoadHFileProgramW, HANDLE_NAMEONLY, "LoadHFileProgramW", nullptr);
 	REGISTER_HANDLER(SDKLIB_LoadHFileProgramA, HANDLE_NAMEONLY, "LoadHFileProgramA", nullptr);
 	REGISTER_HANDLER(SDKLIB__LoadLibraryA, HANDLE_IMPLEMENTED, "_LoadLibraryA", _LoadLibraryA);

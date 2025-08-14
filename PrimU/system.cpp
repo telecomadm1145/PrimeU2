@@ -146,18 +146,18 @@ static std::string MapHostPathToVM(const char* hostPath) {
 
 	std::string s(hostPath);
 
-	// 如果是相对路径，基于当前 host CWD 转换成绝对路径
-	try {
-		fs::path p(s);
-		if (p.is_relative()) {
-			p = fs::current_path() / p;
-		}
-		s = normalize_slashes(fs::weakly_canonical(p).string());
-	}
-	catch (...) {
-		// 无法 canonical 化
-		s = normalize_slashes(s);
-	}
+	//// 如果是相对路径，基于当前 host CWD 转换成绝对路径
+	//try {
+	//	fs::path p(s);
+	//	if (p.is_relative()) {
+	//		p = fs::current_path() / p;
+	//	}
+	//	s = normalize_slashes(fs::weakly_canonical(p).string());
+	//}
+	//catch (...) {
+	//	// 无法 canonical 化
+	//	s = normalize_slashes(s);
+	//}
 
 	// 转成统一小写做比较（不改变最终返回的大小写）
 	std::string lower = s;
@@ -301,26 +301,26 @@ uint32_t _CloseFile(SystemServiceArguments* args)
 	// g_vfile_table.erase(it);
 	return 1;
 }
-
-// _ReadFile(handle, destVirtPtr, size) -> returns bytes read
-uint32_t _ReadFile(SystemServiceArguments* args)
-{
-	uint32_t handle = args->r0;
-	VirtPtr destVPtr = args->r1;
-	uint32_t size = args->r2;
-
-	std::lock_guard<std::mutex> lk(g_vfile_mutex);
-	auto it = g_vfile_table.find(handle);
-	if (it == g_vfile_table.end()) return 0;
-	FILE* f = it->second.fp;
-	if (!f) return 0;
-
-	void* dest = __GET(void*, destVPtr);
-	if (!dest) return 0;
-
-	size_t read = fread(dest, 1, (size_t)size, f);
-	return static_cast<uint32_t>(read);
-}
+//
+//// _ReadFile(handle, destVirtPtr, size) -> returns bytes read
+//uint32_t _ReadFile(SystemServiceArguments* args)
+//{
+//	uint32_t handle = args->r0;
+//	VirtPtr destVPtr = args->r1;
+//	uint32_t size = args->r2;
+//
+//	std::lock_guard<std::mutex> lk(g_vfile_mutex);
+//	auto it = g_vfile_table.find(handle);
+//	if (it == g_vfile_table.end()) return 0;
+//	FILE* f = it->second.fp;
+//	if (!f) return 0;
+//
+//	void* dest = __GET(void*, destVPtr);
+//	if (!dest) return 0;
+//
+//	size_t read = fread(dest, 1, (size_t)size, f);
+//	return static_cast<uint32_t>(read);
+//}
 
 // _WriteFile(handle, srcVirtPtr, size) -> returns bytes written
 uint32_t _WriteFile(SystemServiceArguments* args)
@@ -836,23 +836,6 @@ uint32_t _SetPrivateProfileString(SystemServiceArguments* args)
     args->r2, args->r3, args->r3, args->r4, args->r4, args->sp)
 
 VirtPtr struc = 0;
-
-uint32_t prgrmIsRunning(SystemServiceArguments* args)
-{
-	printf("    program: %s\n", __GET(char*, args->r0));
-
-	if (struc == 0)
-		sMemoryManager->DyanmicAlloc(&struc, 0x250);
-
-	return struc;
-}
-uint32_t GetCurrentExecutable(SystemServiceArguments*) {
-	auto cwd = std::string("\\\\?\\ROM");
-	VirtPtr vp;
-	sMemoryManager->DyanmicAlloc(&vp, cwd.size() + 1);
-	std::memcpy(__GET(void*, vp), cwd.c_str(), cwd.size() + 1);
-	return vp;
-}
 
 uint32_t _FindResourceW(SystemServiceArguments* args)
 {
@@ -1858,7 +1841,497 @@ uint32_t _GetModuleFileNameA(SystemServiceArguments* args) {
 	return vmpath.size();
 }
 
+// 更健壮的 _afnsplit / _afnmerge：如果 r4 被 spill 到栈上则从 guest 栈读取（args->sp + 8）
+uint32_t _afnsplit(SystemServiceArguments* args)
+{
+	// signature: (r0=const char* path, r1=char* drive, r2=char* dir, r3=char* name, r4=char* ext)
+	const char* path = __GET(const char*, args->r0);
+	char* drive = __GET(char*, args->r1);
+	char* dir = __GET(char*, args->r2);
+	char* name = __GET(char*, args->r3);
+	char* ext = __GET(char*, args->sp + 8);
+
+	if (!path) {
+		if (drive) drive[0] = '\0';
+		if (dir) dir[0] = '\0';
+		if (name) name[0] = '\0';
+		if (ext) ext[0] = '\0';
+		return (uint32_t)-1;
+	}
+
+	// Normalize slashes to backslash
+	std::string s(path);
+	std::replace(s.begin(), s.end(), '/', '\\');
+
+	if (drive) drive[0] = '\0';
+	if (dir) dir[0] = '\0';
+	if (name) name[0] = '\0';
+	if (ext) ext[0] = '\0';
+
+	size_t pos = 0;
+
+	if (s.size() >= 2 && std::isalpha((unsigned char)s[0]) && s[1] == ':') {
+		if (drive) {
+			drive[0] = s[0];
+			drive[1] = ':';
+			drive[2] = '\0';
+		}
+		pos = 2;
+	}
+
+	size_t last_slash = s.find_last_of('\\');
+	std::string dir_str;
+	std::string filename;
+	if (last_slash == std::string::npos || last_slash < pos) {
+		dir_str.clear();
+		filename = s.substr(pos);
+	}
+	else {
+		dir_str = s.substr(pos, last_slash - pos + 1); // include trailing '\'
+		filename = s.substr(last_slash + 1);
+	}
+
+	if (pos == 0 && !s.empty() && s[0] == '\\' && dir_str.empty()) {
+		size_t second_slash = s.find('\\', 1);
+		if (second_slash != std::string::npos) {
+			dir_str = s.substr(0, second_slash + 1);
+			filename = s.substr(second_slash + 1);
+		}
+	}
+
+	std::string name_str;
+	std::string ext_str;
+	if (!filename.empty()) {
+		size_t last_dot = filename.find_last_of('.');
+		if (last_dot == std::string::npos || last_dot == 0) {
+			name_str = filename;
+			ext_str.clear();
+		}
+		else {
+			name_str = filename.substr(0, last_dot);
+			ext_str = filename.substr(last_dot); // includes '.'
+		}
+	}
+
+	if (dir) {
+		if (!dir_str.empty()) std::strcpy(dir, dir_str.c_str());
+		else dir[0] = '\0';
+	}
+	if (name) {
+		if (!name_str.empty()) std::strcpy(name, name_str.c_str());
+		else name[0] = '\0';
+	}
+	if (ext) {
+		if (!ext_str.empty()) std::strcpy(ext, ext_str.c_str());
+		else ext[0] = '\0';
+	}
+
+	// 可选日志
+	// printf("    +_afnsplit: path='%s' -> drive='%s' dir='%s' name='%s' ext='%s'\n",
+	//        path, drive ? drive : "", dir ? dir : "", name ? name : "", ext ? ext : "");
+
+	return 0;
+}
+
+uint32_t _afnmerge(SystemServiceArguments* args)
+{
+	// signature: (r0=char* outPath, r1=const char* drive, r2=const char* dir, r3=const char* name, r4=const char* ext)
+	char* outPath = __GET(char*, args->r0);
+	const char* drive = __GET(const char*, args->r1);
+	const char* dir = __GET(const char*, args->r2);
+	const char* name = __GET(const char*, args->r3);
+	const char* ext = __GET(char*, args->sp + 0x8);
+
+	printf("_afmerge hack!\n");
+	ext = ".dat";
+
+	if (!outPath) return (uint32_t)-1;
+
+	std::string out;
+
+	if (drive && drive[0]) {
+		std::string drv(drive);
+		if (drv.size() == 1 && std::isalpha((unsigned char)drv[0])) {
+			drv.push_back(':');
+		}
+		out += drv;
+	}
+
+	if (dir && dir[0]) {
+		std::string d(dir);
+		std::replace(d.begin(), d.end(), '/', '\\');
+		out += d;
+	}
+
+	bool need_sep = false;
+	if ((dir && dir[0]) && (name && name[0])) {
+		size_t len = std::string(dir).length();
+		if (len == 0 || dir[len - 1] != '\\') need_sep = true;
+	}
+
+	if (need_sep) out.push_back('\\');
+
+	if (name && name[0]) out += name;
+
+	if (ext && ext[0]) {
+		std::string e(ext);
+		if (e[0] != '.') out.push_back('.');
+		out += e;
+	}
+
+	std::replace(out.begin(), out.end(), '/', '\\');
+	std::strcpy(outPath, out.c_str());
+
+	// 可选日志
+	// printf("    +_afnmerge -> '%s'\n", out.c_str());
+
+	return 0;
+}
+
 
 void sys_init() {
 	g_cwds[0] = "A:\\WINDOW\\SYSTEM";
+}
+
+
+uint32_t prgrmIsRunning(SystemServiceArguments* args)
+{
+	printf("    program: %s\n", __GET(char*, args->r0));
+
+	if (struc == 0)
+		sMemoryManager->DyanmicAlloc(&struc, 0x250);
+
+	return struc;
+}
+uint32_t ProgramIsRunningW(SystemServiceArguments* args)
+{
+	printf("    program: %ls\n", __GET(wchar_t*, args->r0));
+
+	if (struc == 0)
+		sMemoryManager->DyanmicAlloc(&struc, 0x250);
+
+	return struc;
+}
+uint32_t GetCurrentExecutable(SystemServiceArguments*) {
+	auto app = MapHostPathToVM(runningApplicationImagePath.c_str());
+	VirtPtr vp;
+	sMemoryManager->DyanmicAlloc(&vp, app.size() + 1);
+	std::memcpy(__GET(void*, vp), app.c_str(), app.size() + 1);
+	return vp;
+}
+// --- loader-subfile support (add near other globals) ---
+struct LoaderFD {
+	FILE* fp = nullptr;         // underlying host FILE*
+	uint64_t base = 0;         // base offset within fp for this subfile
+	uint64_t size = 0;         // valid length of this subfile region
+	uint64_t pos = 0;          // current read/write offset inside the subfile (0..size)
+	std::string hostPath;      // optional: for debug/log
+};
+
+static std::mutex g_loader_mutex;
+static std::unordered_map<uint32_t, LoaderFD> g_loader_table;
+static uint32_t g_next_loader_handle = 0x20000000; // 0 reserved invalid
+
+// ----------------------------------------------------------------
+// _FileSize: args->r0 is expected to be a loader-handle or file-handle.
+// returns size (uint32) or (uint32)-1 on error (matches ssize_t -1 behavior)
+uint32_t _FileSize(SystemServiceArguments* args)
+{
+	uint32_t h = args->r0;
+	if (h == 0) return (uint32_t)-1;
+
+	// 1) check if it's a loader subfile handle we created
+	{
+		std::lock_guard<std::mutex> lk(g_loader_mutex);
+		auto lit = g_loader_table.find(h);
+		if (lit != g_loader_table.end()) {
+			uint64_t sz = lit->second.size;
+			if (sz > UINT32_MAX) return UINT32_MAX;
+			return static_cast<uint32_t>(sz);
+		}
+	}
+
+	// 2) otherwise treat as normal vfile handle (from _OpenFile -> g_vfile_table)
+	{
+		std::lock_guard<std::mutex> lk2(g_vfile_mutex);
+		auto fit = g_vfile_table.find(h);
+		if (fit != g_vfile_table.end() && fit->second.fp) {
+			uint64_t size64 = 0, origPos = 0;
+			if (!get_file_size_preserve_pos(fit->second.fp, size64, origPos)) {
+				return (uint32_t)-1;
+			}
+			if (size64 > UINT32_MAX) return UINT32_MAX;
+			return static_cast<uint32_t>(size64);
+		}
+	}
+
+	// unknown handle
+	return (uint32_t)-1;
+}
+
+// ----------------------------------------------------------------
+// _OpenSubFile: args->r0 = parent handle (loader-handle OR file-handle)
+//                args->r1 = base offset (uint32/size_t)
+//                args->r2 = max_size (uint32/size_t)
+// returns new loader-handle (non-zero) or 0 on error
+uint32_t _OpenSubFile(SystemServiceArguments* args)
+{
+	uint32_t parent = args->r0;
+	uint64_t base = static_cast<uint64_t>(args->r1);
+	uint64_t max_size = static_cast<uint64_t>(args->r2);
+
+	if (parent == 0) return 0;
+
+	FILE* backing_fp = nullptr;
+	uint64_t parent_base = 0;
+	uint64_t parent_size = 0;
+	std::string hostPath;
+
+	// 1) Check if parent is an existing loader handle
+	{
+		std::lock_guard<std::mutex> lk(g_loader_mutex);
+		auto lit = g_loader_table.find(parent);
+		if (lit != g_loader_table.end()) {
+			backing_fp = lit->second.fp;
+			parent_base = lit->second.base;
+			parent_size = lit->second.size;
+			hostPath = lit->second.hostPath;
+		}
+	}
+
+	// 2) If not loader, check vfile table (plain fopen handles)
+	if (!backing_fp) {
+		std::lock_guard<std::mutex> lk2(g_vfile_mutex);
+		auto fit = g_vfile_table.find(parent);
+		if (fit != g_vfile_table.end() && fit->second.fp) {
+			backing_fp = fit->second.fp;
+			hostPath = fit->second.hostPath;
+			// compute whole file size as parent_size
+			uint64_t size64 = 0, origPos = 0;
+			if (!get_file_size_preserve_pos(backing_fp, size64, origPos)) {
+				return 0;
+			}
+			parent_base = 0;
+			parent_size = size64;
+		}
+	}
+
+	if (!backing_fp) {
+		printf("    +_OpenSubFile: parent handle %u not found\n", parent);
+		return 0;
+	}
+
+	// 3) compute the sub-region (clamp to parent_size)
+	if (base > parent_size) {
+		// base outside parent region -> empty subfile
+		printf("    +_OpenSubFile: base (%llu) > parent_size (%llu)\n",
+			(unsigned long long)base, (unsigned long long)parent_size);
+		return 0;
+	}
+	uint64_t sub_base = parent_base + base;
+	uint64_t remaining = parent_size - base;
+	uint64_t sub_size = (max_size == 0) ? remaining : std::min(max_size, remaining);
+
+	// 4) allocate new loader handle (references same FILE*)
+	uint32_t newHandle;
+	{
+		std::lock_guard<std::mutex> lk(g_loader_mutex);
+		newHandle = g_next_loader_handle++;
+		LoaderFD fd;
+		fd.fp = backing_fp; // NOTE: we do NOT duplicate/close underlying fp here
+		fd.base = sub_base;
+		fd.size = sub_size;
+		fd.hostPath = hostPath;
+		g_loader_table.emplace(newHandle, std::move(fd));
+	}
+
+	printf("    +_OpenSubFile: parent=%u base=%llu max=%llu -> loader_handle=%u (sub_base=%llu size=%llu) path='%s'\n",
+		parent,
+		(unsigned long long)base,
+		(unsigned long long)max_size,
+		newHandle,
+		(unsigned long long)sub_base,
+		(unsigned long long)sub_size,
+		hostPath.c_str());
+
+	return newHandle;
+}
+
+
+
+// portable helpers: set/get file pos with 64-bit offsets, preserving/restore on failure
+static bool set_file_pos(FILE* f, uint64_t newpos, uint64_t& oldpos) {
+#if defined(_WIN32)
+	__int64 cur = _ftelli64(f);
+	if (cur == -1) return false;
+	oldpos = static_cast<uint64_t>(cur);
+	if (_fseeki64(f, static_cast<__int64>(newpos), SEEK_SET) != 0) {
+		_fseeki64(f, static_cast<__int64>(cur), SEEK_SET);
+		return false;
+	}
+	return true;
+#elif defined(_POSIX_VERSION) || defined(__unix__) || defined(__APPLE__)
+	off_t cur = ftello(f);
+	if (cur == (off_t)-1) return false;
+	oldpos = static_cast<uint64_t>(cur);
+	if (fseeko(f, static_cast<off_t>(newpos), SEEK_SET) != 0) {
+		fseeko(f, static_cast<off_t>(cur), SEEK_SET);
+		return false;
+	}
+	return true;
+#else
+	long cur = ftell(f);
+	if (cur == -1L) return false;
+	oldpos = static_cast<uint64_t>(cur);
+	if (fseek(f, static_cast<long>(newpos), SEEK_SET) != 0) {
+		fseek(f, static_cast<long>(cur), SEEK_SET);
+		return false;
+	}
+	return true;
+#endif
+}
+
+static bool restore_file_pos(FILE* f, uint64_t oldpos) {
+#if defined(_WIN32)
+	if (_fseeki64(f, static_cast<__int64>(oldpos), SEEK_SET) != 0) return false;
+	return true;
+#elif defined(_POSIX_VERSION) || defined(__unix__) || defined(__APPLE__)
+	if (fseeko(f, static_cast<off_t>(oldpos), SEEK_SET) != 0) return false;
+	return true;
+#else
+	if (fseek(f, static_cast<long>(oldpos), SEEK_SET) != 0) return false;
+	return true;
+#endif
+}
+
+// ----------------- 读取子文件/loader 文件 -----------------
+// syscall wrapper: read from loader/file handle
+// args mapping used: r0 = handle, r1 = destVirtPtr, r2 = size
+uint32_t _ReadFile(SystemServiceArguments* args)
+{
+	uint32_t handle = args->r0;
+	VirtPtr destVPtr = args->r1;
+	size_t req_size = static_cast<size_t>(args->r2);
+
+	if (handle == 0 || req_size == 0) return 0;
+
+	void* dest = __GET(void*, destVPtr);
+	if (!dest) return 0;
+
+	// 1) If it's a loader subfile handle
+	{
+		std::lock_guard<std::mutex> lk(g_loader_mutex);
+		auto lit = g_loader_table.find(handle);
+		if (lit != g_loader_table.end()) {
+			LoaderFD& ld = lit->second;
+			if (ld.pos >= ld.size) return 0; // EOF for subfile
+
+			uint64_t remaining = ld.size - ld.pos;
+			size_t toread = static_cast<size_t>(std::min<uint64_t>(remaining, req_size));
+			if (toread == 0) return 0;
+
+			// Seek underlying FILE* to absolute (base + pos), but preserve/restore original pos
+			uint64_t oldpos = 0;
+			if (!set_file_pos(ld.fp, ld.base + ld.pos, oldpos)) {
+				return 0;
+			}
+
+			size_t actually_read = fread(dest, 1, toread, ld.fp);
+
+			// restore file position (best effort)
+			restore_file_pos(ld.fp, oldpos);
+
+			// update subfile pos
+			ld.pos += actually_read;
+
+			return static_cast<uint32_t>(actually_read);
+		}
+	}
+
+	// 2) Otherwise, treat as normal vfile handle
+	{
+		std::lock_guard<std::mutex> lk(g_vfile_mutex);
+		auto fit = g_vfile_table.find(handle);
+		if (fit != g_vfile_table.end() && fit->second.fp) {
+			FILE* f = fit->second.fp;
+			size_t actually_read = fread(dest, 1, req_size, f);
+			if (actually_read == 0) {
+				if (feof(f)) {
+					// EOF
+				}
+				else if (ferror(f)) {
+					clearerr(f);
+				}
+			}
+			return static_cast<uint32_t>(actually_read);
+		}
+	}
+
+	// Unknown handle
+	return 0;
+}
+
+// ----------------- 在子文件/loader 文件中 seek -----------------
+// syscall wrapper: seek in loader/file handle
+// args mapping used: r0 = handle, r1 = offset (signed allowed), r2 = whence (0=SET,1=CUR,2=END)
+uint32_t _FseekFile(SystemServiceArguments* args)
+{
+	uint32_t handle = args->r0;
+	// interpret offset as signed 64-bit to support negative offsets if caller uses them
+	int64_t raw_offset = static_cast<int64_t>(static_cast<int32_t>(args->r1));
+	int whence = static_cast<int>(args->r2);
+
+	if (handle == 0) return (uint32_t)-1;
+
+	// 1) loader subfile handle
+	{
+		std::lock_guard<std::mutex> lk(g_loader_mutex);
+		auto lit = g_loader_table.find(handle);
+		if (lit != g_loader_table.end()) {
+			LoaderFD& ld = lit->second;
+			int64_t newpos = 0;
+			if (whence == 0) { // SEEK_SET
+				newpos = raw_offset;
+			}
+			else if (whence == 1) { // SEEK_CUR
+				newpos = static_cast<int64_t>(ld.pos) + raw_offset;
+			}
+			else if (whence == 2) { // SEEK_END
+				newpos = static_cast<int64_t>(ld.size) + raw_offset;
+			}
+			else {
+				return (uint32_t)-1;
+			}
+
+			if (newpos < 0 || static_cast<uint64_t>(newpos) > ld.size) {
+				return (uint32_t)-1; // out of range
+			}
+
+			ld.pos = static_cast<uint64_t>(newpos);
+			return 0; // success
+		}
+	}
+
+	// 2) regular file handle: use underlying FILE* fseek directly
+	{
+		std::lock_guard<std::mutex> lk(g_vfile_mutex);
+		auto fit = g_vfile_table.find(handle);
+		if (fit != g_vfile_table.end() && fit->second.fp) {
+			FILE* f = fit->second.fp;
+			int real_whence = SEEK_SET;
+			if (whence == 0) real_whence = SEEK_SET;
+			else if (whence == 1) real_whence = SEEK_CUR;
+			else if (whence == 2) real_whence = SEEK_END;
+			else return (uint32_t)-1;
+
+#if defined(_WIN32)
+			if (_fseeki64(f, static_cast<__int64>(raw_offset), real_whence) != 0) return (uint32_t)-1;
+#else
+			if (fseek(f, static_cast<long>(raw_offset), real_whence) != 0) return (uint32_t)-1;
+#endif
+			return 0;
+		}
+	}
+
+	return (uint32_t)-1; // unknown handle
 }

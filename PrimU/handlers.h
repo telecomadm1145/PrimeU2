@@ -10,7 +10,12 @@ uint32_t dbgMsg(SystemServiceArguments* args);
 
 
 uint32_t GetCurrentExecutable(SystemServiceArguments* args);
+uint32_t _FileSize(SystemServiceArguments* args);
+uint32_t _OpenSubFile(SystemServiceArguments* args);
+uint32_t _ReadFile(SystemServiceArguments* args);
+uint32_t _FseekFile(SystemServiceArguments* args);
 uint32_t prgrmIsRunning(SystemServiceArguments* args);
+uint32_t ProgramIsRunningW(SystemServiceArguments* args);
 uint32_t _FindResourceW(SystemServiceArguments* args);
 uint32_t _OpenFile(SystemServiceArguments* args);
 uint32_t _LoadLibraryA(SystemServiceArguments* args);
@@ -73,6 +78,11 @@ uint32_t GetEvent(SystemServiceArguments* args);
 uint32_t GetMasterIDInfo(SystemServiceArguments* args);
 
 uint32_t _GetModuleFileNameA(SystemServiceArguments* args);
+
+uint32_t _afnsplit(SystemServiceArguments* args);
+uint32_t _afnmerge(SystemServiceArguments* args);
+
+uint32_t _CloseFile(SystemServiceArguments* args);
 
 uint32_t _aremove(SystemServiceArguments* args);
 
