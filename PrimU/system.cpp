@@ -37,7 +37,7 @@ struct VFile {
 };
 
 static std::unordered_map<uint32_t, VFile> g_vfile_table;
-static uint32_t g_next_handle = 1; // 0 保留为失败/无效
+static uint32_t g_next_handle = 0xdead0000; // 0 保留为失败/无效
 
 // 每个盘符的完整 CWD（以 host path 形式存储），索引 0 -> 'A'
 static std::array<std::string, 26> g_cwds;
@@ -52,7 +52,8 @@ static void ensure_prime_drive_roots_initialized() {
 		root += "\\";
 		g_cwds[i] = root;
 		try {
-			fs::create_directories(root);
+			if (i == 0 || i == 2)
+				fs::create_directories(root);
 		}
 		catch (...) {}
 	}
@@ -216,7 +217,7 @@ static bool ensure_parent_dirs_for_hostpath(const std::string& hostPath) {
 // ====== 虚拟文件表（open/read/write/close/seek） ======
 
 // 返回非 0 的 handle 表示成功
-uint32_t _OpenFile(SystemServiceArguments* args)
+uint32_t __afopen(SystemServiceArguments* args)
 {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
@@ -289,80 +290,6 @@ uint32_t __wfopen(SystemServiceArguments* args)
 	uint32_t handle = g_next_handle++;
 	g_vfile_table[handle] = VFile{ f, hostPath, mode };
 	return handle;
-}
-
-uint32_t _CloseFile(SystemServiceArguments* args)
-{
-	uint32_t handle = args->r0;
-	std::lock_guard<std::mutex> lk(g_vfile_mutex);
-	auto it = g_vfile_table.find(handle);
-	if (it == g_vfile_table.end()) return 0;
-	if (it->second.fp) fclose(it->second.fp);
-	// g_vfile_table.erase(it);
-	return 1;
-}
-//
-//// _ReadFile(handle, destVirtPtr, size) -> returns bytes read
-//uint32_t _ReadFile(SystemServiceArguments* args)
-//{
-//	uint32_t handle = args->r0;
-//	VirtPtr destVPtr = args->r1;
-//	uint32_t size = args->r2;
-//
-//	std::lock_guard<std::mutex> lk(g_vfile_mutex);
-//	auto it = g_vfile_table.find(handle);
-//	if (it == g_vfile_table.end()) return 0;
-//	FILE* f = it->second.fp;
-//	if (!f) return 0;
-//
-//	void* dest = __GET(void*, destVPtr);
-//	if (!dest) return 0;
-//
-//	size_t read = fread(dest, 1, (size_t)size, f);
-//	return static_cast<uint32_t>(read);
-//}
-
-// _WriteFile(handle, srcVirtPtr, size) -> returns bytes written
-uint32_t _WriteFile(SystemServiceArguments* args)
-{
-	uint32_t handle = args->r0;
-	VirtPtr srcVPtr = args->r1;
-	uint32_t size = args->r2;
-
-	std::lock_guard<std::mutex> lk(g_vfile_mutex);
-	auto it = g_vfile_table.find(handle);
-	if (it == g_vfile_table.end()) return 0;
-	FILE* f = it->second.fp;
-	if (!f) return 0;
-
-	void* src = __GET(void*, srcVPtr);
-	if (!src) return 0;
-
-	size_t wrote = fwrite(src, 1, (size_t)size, f);
-	fflush(f);
-	return static_cast<uint32_t>(wrote);
-}
-
-// _SeekFile(handle, offset, origin) -> returns 0 on success, non-zero on error
-// offset: int32 (args->r1) origin: 0 SEEK_SET, 1 SEEK_CUR, 2 SEEK_END (args->r2)
-uint32_t _SeekFile(SystemServiceArguments* args)
-{
-	uint32_t handle = args->r0;
-	int32_t offset = static_cast<int32_t>(args->r1);
-	int32_t origin = static_cast<int32_t>(args->r2);
-
-	std::lock_guard<std::mutex> lk(g_vfile_mutex);
-	auto it = g_vfile_table.find(handle);
-	if (it == g_vfile_table.end()) return 1; // error
-	FILE* f = it->second.fp;
-	if (!f) return 1;
-
-	int whence = SEEK_SET;
-	if (origin == 1) whence = SEEK_CUR;
-	else if (origin == 2) whence = SEEK_END;
-
-	if (fseek(f, offset, whence) != 0) return 1;
-	return 0;
 }
 
 // ====== 目录 & CWD 操作 ======
@@ -554,7 +481,28 @@ uint32_t _wmkdir(SystemServiceArguments* args)
 		return 0;
 	}
 }
+uint32_t _wrmdir(SystemServiceArguments* args)
+{
+	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
 
+	const wchar_t* vmname = __GET(wchar_t*, args->r0);
+	wprintf(L"    +wrmdir VM name: %ls\n", vmname ? vmname : L"(null)");
+
+	try {
+		// MapVMPathToHostW 是 MapVMPathToHost 的宽字符版本
+		std::string hostPath = MapVMPathToHostW(vmname);
+		printf("    +Mapped host path: %s\n", hostPath.c_str());
+
+		fs::path p(hostPath);
+		fs::remove(p);
+
+		return 1;
+	}
+	catch (const std::exception& e) {
+		printf("    +wrmdir exception: %s\n", e.what());
+		return 0;
+	}
+}
 
 
 
@@ -1014,11 +962,56 @@ uint32_t _lfree(SystemServiceArguments* args)
 		printf("    +error\n");
 	return args->r0;
 }
+#include <iostream>
+#include <iomanip>
+#include <cctype>
+#include <span>
+#include <format>
 
+void dump_to_console(void* ptr, size_t size) {
+	if (!ptr || size == 0) {
+		std::cout << "Invalid pointer or size\n";
+		return;
+	}
+
+	// Create a span for safe byte access
+	std::span<const std::byte> data{ static_cast<const std::byte*>(ptr), size };
+
+	constexpr size_t bytes_per_line = 16;
+
+	for (size_t offset = 0; offset < size; offset += bytes_per_line) {
+		// Print offset
+		std::cout << std::format("{:08x}: ", offset);
+
+		// Print hex values
+		size_t line_bytes = std::min(bytes_per_line, size - offset);
+
+		for (size_t i = 0; i < bytes_per_line; ++i) {
+			if (i < line_bytes) {
+				std::cout << std::format("{:02x} ", static_cast<unsigned char>(data[offset + i]));
+			}
+			else {
+				std::cout << "   "; // padding for incomplete lines
+			}
+
+			// Add extra space in the middle for readability
+			if (i == 7) std::cout << " ";
+		}
+
+		std::cout << " |";
+
+		// Print ASCII representation
+		for (size_t i = 0; i < line_bytes; ++i) {
+			unsigned char byte = static_cast<unsigned char>(data[offset + i]);
+			std::cout << (std::isprint(byte) ? static_cast<char>(byte) : '.');
+		}
+
+		std::cout << "|\n";
+	}
+}
 uint32_t OSCreateThread(SystemServiceArguments* args)
 {
-	//DUMPARGS;
-	return sThreadHandler->NewThread(args->r0, args->r4);
+	return sThreadHandler->NewThread(args->r0, args->r1);
 }
 
 uint32_t OSSetThreadPriority(SystemServiceArguments* args)
@@ -1060,7 +1053,6 @@ uint32_t GetSysTime(SystemServiceArguments* args)
 	return args->r0;
 }
 
-// append-write: _fwrite(handle, srcVirtPtr, size) -> bytes written (append to file end)
 uint32_t _fwrite(SystemServiceArguments* args)
 {
 	uint32_t handle = args->r3;
@@ -1080,22 +1072,14 @@ uint32_t _fwrite(SystemServiceArguments* args)
 	void* src = __GET(void*, srcVPtr);
 	if (!src) return 0;
 
-	//// seek to end for append semantics
-	//if (fseek(f, 0, SEEK_END) != 0) {
-	//	// seek failed
-	//	return 0;
-	//}
-
 	size_t wrote = fwrite(src, 1, static_cast<size_t>(size), f);
 	if (wrote > 0) fflush(f);
 
 	return static_cast<uint32_t>(wrote);
 }
 
-// close: mirror of _CloseFile but named _fclose (returns 1 on success)
-uint32_t _fclose(SystemServiceArguments* args)
+uint32_t _fclose_host(uint32_t handle)
 {
-	uint32_t handle = args->r0;
 	if (handle == 0) return 0;
 
 	std::lock_guard<std::mutex> lk(g_vfile_mutex);
@@ -1108,6 +1092,12 @@ uint32_t _fclose(SystemServiceArguments* args)
 	}
 	// g_vfile_table.erase(it);
 	return 1;
+}
+
+uint32_t _fclose(SystemServiceArguments* args)
+{
+	uint32_t handle = args->r0;
+	return _fclose_host(handle);
 }
 
 // --------- _filesize: return file size (clamped to uint32_t) ----------
@@ -1184,6 +1174,22 @@ uint32_t _filesize(SystemServiceArguments* args)
 	return static_cast<uint32_t>(size64);
 }
 
+uint32_t __fseek(SystemServiceArguments* args)
+{
+	uint32_t handle = args->r0;
+	if (handle == 0) return -1;
+
+	std::lock_guard<std::mutex> lk(g_vfile_mutex);
+	auto it = g_vfile_table.find(handle);
+	if (it == g_vfile_table.end()) return -1;
+	FILE* f = it->second.fp;
+	if (!f) return -1;
+	size_t offset = args->r1;
+	int whence = args->r2;
+	_fseeki64(f, (long long)offset, whence);
+	printf("__fseek: %p+%zu(%d), result:0\n", (void*)args->r0, offset, whence);
+	return 0;
+}
 // --------- _fread: read from current file pointer into VM memory ----------
 uint32_t _fread(SystemServiceArguments* args)
 {
@@ -1485,7 +1491,7 @@ short find_next_internal(VirtPtr ctx_vptr) {
 		}
 
 		// --- MATCH FOUND ---
-		printf("    +findnext: found '%s'\n", filename_u8.c_str());
+		// printf("    +findnext: found '%s'\n", filename_u8.c_str());
 
 		// Populate guest context structure
 		std::error_code ec;
@@ -1723,6 +1729,12 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 		voltage[0] = voltage[1] = voltage[2] = voltage[3] = 4;
 		return 1;
 	}
+	if (g_vdev_table[handle].ends_with("ARCH")) {
+		auto voltage = (uint32_t*)out;
+		// TODO: Idk why this works...
+		voltage[0] = 0xaaaaaaaa;
+		return 1;
+	}
 	std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
 		<< " request:" << request
 		<< " size:" << size << "\n";
@@ -1814,9 +1826,9 @@ uint32_t GetEvent(SystemServiceArguments* args)
 }
 #pragma pack(push, 1)
 typedef struct _MASTER_ID_INFO {
-	char a1[58];  // 前缀信息（可能是厂商ID、地区码等）
+	char a1[40];  // 前缀信息（可能是厂商ID、地区码等）
 	char a2[36];        // offset 0x58 处的序列号
-	//char master_id_suffix[30]; // 剩余部分（可能是校验或附加信息）
+	char master_id_suffix[18]; // 剩余部分（可能是校验或附加信息）
 	char a3[78];        // 从属ID（MAC、IMEI 或其他）
 } MASTER_ID_INFO;
 #pragma pack(pop)
@@ -1990,7 +2002,7 @@ uint32_t _afnmerge(SystemServiceArguments* args)
 
 
 void sys_init() {
-	g_cwds[0] = "A:\\WINDOW\\SYSTEM";
+	//g_cwds[0] = "A:\\WINDOW\\SYSTEM";
 }
 
 
@@ -2019,319 +2031,178 @@ uint32_t GetCurrentExecutable(SystemServiceArguments*) {
 	std::memcpy(__GET(void*, vp), app.c_str(), app.size() + 1);
 	return vp;
 }
-// --- loader-subfile support (add near other globals) ---
-struct LoaderFD {
-	FILE* fp = nullptr;         // underlying host FILE*
-	uint64_t base = 0;         // base offset within fp for this subfile
-	uint64_t size = 0;         // valid length of this subfile region
-	uint64_t pos = 0;          // current read/write offset inside the subfile (0..size)
-	std::string hostPath;      // optional: for debug/log
-};
 
-static std::mutex g_loader_mutex;
-static std::unordered_map<uint32_t, LoaderFD> g_loader_table;
-static uint32_t g_next_loader_handle = 0x20000000; // 0 reserved invalid
+typedef struct loader_file_descriptor_s {
+	VirtPtr cart;
+	VirtPtr parent_fd;
+	uint32_t subfile_base;
+	uint32_t size;
+	uint32_t subfile_offset;
+	short unk_0x14;
+	short unk_0x16;
+	unsigned int unk_0x18;
+	unsigned int unk_0x1c;
+} loader_file_descriptor_t;
 
-// ----------------------------------------------------------------
-// _FileSize: args->r0 is expected to be a loader-handle or file-handle.
-// returns size (uint32) or (uint32)-1 on error (matches ssize_t -1 behavior)
-uint32_t _FileSize(SystemServiceArguments* args)
-{
-	uint32_t h = args->r0;
-	if (h == 0) return (uint32_t)-1;
+uint32_t _OpenFile(SystemServiceArguments* args) {
+	//printf("OpenFile: %s mode: %s\n", pathname, mode);
 
-	// 1) check if it's a loader subfile handle we created
-	{
-		std::lock_guard<std::mutex> lk(g_loader_mutex);
-		auto lit = g_loader_table.find(h);
-		if (lit != g_loader_table.end()) {
-			uint64_t sz = lit->second.size;
-			if (sz > UINT32_MAX) return UINT32_MAX;
-			return static_cast<uint32_t>(sz);
-		}
+	uint32_t cart = __afopen(args);
+	if (!cart) return NULL;
+
+	VirtPtr vp;
+	sMemoryManager->DyanmicAlloc(&vp, sizeof(loader_file_descriptor_t));
+
+	loader_file_descriptor_t* fd = __GET(loader_file_descriptor_t*, vp);
+	if (!fd) {
+		_fclose_host(cart);
+		errno = ENOMEM;
+		return NULL;
 	}
 
-	// 2) otherwise treat as normal vfile handle (from _OpenFile -> g_vfile_table)
-	{
-		std::lock_guard<std::mutex> lk2(g_vfile_mutex);
-		auto fit = g_vfile_table.find(h);
-		if (fit != g_vfile_table.end() && fit->second.fp) {
-			uint64_t size64 = 0, origPos = 0;
-			if (!get_file_size_preserve_pos(fit->second.fp, size64, origPos)) {
-				return (uint32_t)-1;
-			}
-			if (size64 > UINT32_MAX) return UINT32_MAX;
-			return static_cast<uint32_t>(size64);
-		}
-	}
+	fd->cart = cart;
+	fd->parent_fd = NULL;
+	fd->subfile_base = 0;
+	fd->subfile_offset = 0;
+	fd->unk_0x14 = 0;
+	fd->unk_0x16 = 0;
+	fd->unk_0x18 = 0;
+	fd->unk_0x1c = 0;
 
-	// unknown handle
-	return (uint32_t)-1;
+	auto& rhandle = g_vfile_table[cart];
+
+	fseek(rhandle.fp, 0, SEEK_END);
+	fd->size = ftell(rhandle.fp);
+	fseek(rhandle.fp, 0, SEEK_SET);
+
+	//printf("OpenFile: %s mode: %s result:%p\n", pathname, mode, fd);
+	return (uint32_t)vp;
 }
 
-// ----------------------------------------------------------------
-// _OpenSubFile: args->r0 = parent handle (loader-handle OR file-handle)
-//                args->r1 = base offset (uint32/size_t)
-//                args->r2 = max_size (uint32/size_t)
-// returns new loader-handle (non-zero) or 0 on error
-uint32_t _OpenSubFile(SystemServiceArguments* args)
-{
-	uint32_t parent = args->r0;
-	uint64_t base = static_cast<uint64_t>(args->r1);
-	uint64_t max_size = static_cast<uint64_t>(args->r2);
-
-	if (parent == 0) return 0;
-
-	FILE* backing_fp = nullptr;
-	uint64_t parent_base = 0;
-	uint64_t parent_size = 0;
-	std::string hostPath;
-
-	// 1) Check if parent is an existing loader handle
-	{
-		std::lock_guard<std::mutex> lk(g_loader_mutex);
-		auto lit = g_loader_table.find(parent);
-		if (lit != g_loader_table.end()) {
-			backing_fp = lit->second.fp;
-			parent_base = lit->second.base;
-			parent_size = lit->second.size;
-			hostPath = lit->second.hostPath;
-		}
+uint32_t _FileSize(SystemServiceArguments* args) {
+	loader_file_descriptor_t* stream = __GET(loader_file_descriptor_t*, args->r0);
+	if (!stream) {
+		errno = EINVAL;
+		return (size_t)-1;
 	}
-
-	// 2) If not loader, check vfile table (plain fopen handles)
-	if (!backing_fp) {
-		std::lock_guard<std::mutex> lk2(g_vfile_mutex);
-		auto fit = g_vfile_table.find(parent);
-		if (fit != g_vfile_table.end() && fit->second.fp) {
-			backing_fp = fit->second.fp;
-			hostPath = fit->second.hostPath;
-			// compute whole file size as parent_size
-			uint64_t size64 = 0, origPos = 0;
-			if (!get_file_size_preserve_pos(backing_fp, size64, origPos)) {
-				return 0;
-			}
-			parent_base = 0;
-			parent_size = size64;
-		}
-	}
-
-	if (!backing_fp) {
-		printf("    +_OpenSubFile: parent handle %u not found\n", parent);
-		return 0;
-	}
-
-	// 3) compute the sub-region (clamp to parent_size)
-	if (base > parent_size) {
-		// base outside parent region -> empty subfile
-		printf("    +_OpenSubFile: base (%llu) > parent_size (%llu)\n",
-			(unsigned long long)base, (unsigned long long)parent_size);
-		return 0;
-	}
-	uint64_t sub_base = parent_base + base;
-	uint64_t remaining = parent_size - base;
-	uint64_t sub_size = (max_size == 0) ? remaining : std::min(max_size, remaining);
-
-	// 4) allocate new loader handle (references same FILE*)
-	uint32_t newHandle;
-	{
-		std::lock_guard<std::mutex> lk(g_loader_mutex);
-		newHandle = g_next_loader_handle++;
-		LoaderFD fd;
-		fd.fp = backing_fp; // NOTE: we do NOT duplicate/close underlying fp here
-		fd.base = sub_base;
-		fd.size = sub_size;
-		fd.hostPath = hostPath;
-		g_loader_table.emplace(newHandle, std::move(fd));
-	}
-
-	printf("    +_OpenSubFile: parent=%u base=%llu max=%llu -> loader_handle=%u (sub_base=%llu size=%llu) path='%s'\n",
-		parent,
-		(unsigned long long)base,
-		(unsigned long long)max_size,
-		newHandle,
-		(unsigned long long)sub_base,
-		(unsigned long long)sub_size,
-		hostPath.c_str());
-
-	return newHandle;
+	printf("_FileSize: %p, result: %zu\n", (void*)args->r0, stream->size);
+	return stream->size;
 }
 
+uint32_t _OpenSubFile(SystemServiceArguments* args) {
+	loader_file_descriptor_t* parent = __GET(loader_file_descriptor_t*, args->r0);
+	size_t base = args->r1;
+	size_t max_size = args->r2;
+	if (!parent) {
+		errno = EINVAL;
+		return NULL;
+	}
+	printf("opensubf: parent:%p\n", args->r0);
 
+	if (base + max_size > parent->size) {
+		fprintf(stderr, "Error: Sub-file extends beyond parent's bounds.\n");
+		errno = EINVAL;
+		return NULL;
+	}
+	VirtPtr vp;
+	sMemoryManager->DyanmicAlloc(&vp, sizeof(loader_file_descriptor_t));
 
-// portable helpers: set/get file pos with 64-bit offsets, preserving/restore on failure
-static bool set_file_pos(FILE* f, uint64_t newpos, uint64_t& oldpos) {
-#if defined(_WIN32)
-	__int64 cur = _ftelli64(f);
-	if (cur == -1) return false;
-	oldpos = static_cast<uint64_t>(cur);
-	if (_fseeki64(f, static_cast<__int64>(newpos), SEEK_SET) != 0) {
-		_fseeki64(f, static_cast<__int64>(cur), SEEK_SET);
-		return false;
+	loader_file_descriptor_t* fd = __GET(loader_file_descriptor_t*, vp);
+	if (!fd) {
+		errno = ENOMEM;
+		return NULL;
 	}
-	return true;
-#elif defined(_POSIX_VERSION) || defined(__unix__) || defined(__APPLE__)
-	off_t cur = ftello(f);
-	if (cur == (off_t)-1) return false;
-	oldpos = static_cast<uint64_t>(cur);
-	if (fseeko(f, static_cast<off_t>(newpos), SEEK_SET) != 0) {
-		fseeko(f, static_cast<off_t>(cur), SEEK_SET);
-		return false;
-	}
-	return true;
-#else
-	long cur = ftell(f);
-	if (cur == -1L) return false;
-	oldpos = static_cast<uint64_t>(cur);
-	if (fseek(f, static_cast<long>(newpos), SEEK_SET) != 0) {
-		fseek(f, static_cast<long>(cur), SEEK_SET);
-		return false;
-	}
-	return true;
-#endif
+
+	fd->cart = parent->cart;
+	fd->parent_fd = args->r0;
+	fd->subfile_base = parent->subfile_base + base;
+	fd->size = max_size;
+	fd->subfile_offset = 0;
+	fd->unk_0x14 = 1;
+	fd->unk_0x16 = 0;
+	fd->unk_0x18 = 0;
+	fd->unk_0x1c = 0;
+
+	printf("OpenSubFile: parent:%p, base:%zu, size:%zu, subf:%p\n", (void*)fd->parent_fd, base, max_size, (void*)fd);
+	return vp;
 }
 
-static bool restore_file_pos(FILE* f, uint64_t oldpos) {
-#if defined(_WIN32)
-	if (_fseeki64(f, static_cast<__int64>(oldpos), SEEK_SET) != 0) return false;
-	return true;
-#elif defined(_POSIX_VERSION) || defined(__unix__) || defined(__APPLE__)
-	if (fseeko(f, static_cast<off_t>(oldpos), SEEK_SET) != 0) return false;
-	return true;
-#else
-	if (fseek(f, static_cast<long>(oldpos), SEEK_SET) != 0) return false;
-	return true;
-#endif
-}
+uint32_t _CloseFile(SystemServiceArguments* args) {
+	loader_file_descriptor_t* stream = __GET(loader_file_descriptor_t*, args->r0);
 
-// ----------------- 读取子文件/loader 文件 -----------------
-// syscall wrapper: read from loader/file handle
-// args mapping used: r0 = handle, r1 = destVirtPtr, r2 = size
-uint32_t _ReadFile(SystemServiceArguments* args)
-{
-	uint32_t handle = args->r0;
-	VirtPtr destVPtr = args->r1;
-	size_t req_size = static_cast<size_t>(args->r2);
+	if (!stream) return 0;
 
-	if (handle == 0 || req_size == 0) return 0;
+	printf("_CloseFile: %p\n", (void*)args->r0);
 
-	void* dest = __GET(void*, destVPtr);
-	if (!dest) return 0;
-
-	// 1) If it's a loader subfile handle
-	{
-		std::lock_guard<std::mutex> lk(g_loader_mutex);
-		auto lit = g_loader_table.find(handle);
-		if (lit != g_loader_table.end()) {
-			LoaderFD& ld = lit->second;
-			if (ld.pos >= ld.size) return 0; // EOF for subfile
-
-			uint64_t remaining = ld.size - ld.pos;
-			size_t toread = static_cast<size_t>(std::min<uint64_t>(remaining, req_size));
-			if (toread == 0) return 0;
-
-			// Seek underlying FILE* to absolute (base + pos), but preserve/restore original pos
-			uint64_t oldpos = 0;
-			if (!set_file_pos(ld.fp, ld.base + ld.pos, oldpos)) {
-				return 0;
-			}
-
-			size_t actually_read = fread(dest, 1, toread, ld.fp);
-
-			// restore file position (best effort)
-			restore_file_pos(ld.fp, oldpos);
-
-			// update subfile pos
-			ld.pos += actually_read;
-
-			return static_cast<uint32_t>(actually_read);
-		}
+	if (!stream->parent_fd) {
+		_fclose_host(stream->cart);
 	}
 
-	// 2) Otherwise, treat as normal vfile handle
-	{
-		std::lock_guard<std::mutex> lk(g_vfile_mutex);
-		auto fit = g_vfile_table.find(handle);
-		if (fit != g_vfile_table.end() && fit->second.fp) {
-			FILE* f = fit->second.fp;
-			size_t actually_read = fread(dest, 1, req_size, f);
-			if (actually_read == 0) {
-				if (feof(f)) {
-					// EOF
-				}
-				else if (ferror(f)) {
-					clearerr(f);
-				}
-			}
-			return static_cast<uint32_t>(actually_read);
-		}
-	}
+	sMemoryManager->DynamicFree(args->r0);
 
-	// Unknown handle
 	return 0;
 }
 
-// ----------------- 在子文件/loader 文件中 seek -----------------
-// syscall wrapper: seek in loader/file handle
-// args mapping used: r0 = handle, r1 = offset (signed allowed), r2 = whence (0=SET,1=CUR,2=END)
-uint32_t _FseekFile(SystemServiceArguments* args)
-{
-	uint32_t handle = args->r0;
-	// interpret offset as signed 64-bit to support negative offsets if caller uses them
-	int64_t raw_offset = static_cast<int64_t>(static_cast<int32_t>(args->r1));
-	int whence = static_cast<int>(args->r2);
+enum sys_seek_whence_e {
+	/** Seek from the beginning of file. */
+	_SYS_SEEK_SET = 0,
+	/** Seek from current offset. */
+	_SYS_SEEK_CUR,
+	/** Seek from the end of file. */
+	_SYS_SEEK_END,
+};
 
-	if (handle == 0) return (uint32_t)-1;
 
-	// 1) loader subfile handle
-	{
-		std::lock_guard<std::mutex> lk(g_loader_mutex);
-		auto lit = g_loader_table.find(handle);
-		if (lit != g_loader_table.end()) {
-			LoaderFD& ld = lit->second;
-			int64_t newpos = 0;
-			if (whence == 0) { // SEEK_SET
-				newpos = raw_offset;
-			}
-			else if (whence == 1) { // SEEK_CUR
-				newpos = static_cast<int64_t>(ld.pos) + raw_offset;
-			}
-			else if (whence == 2) { // SEEK_END
-				newpos = static_cast<int64_t>(ld.size) + raw_offset;
-			}
-			else {
-				return (uint32_t)-1;
-			}
-
-			if (newpos < 0 || static_cast<uint64_t>(newpos) > ld.size) {
-				return (uint32_t)-1; // out of range
-			}
-
-			ld.pos = static_cast<uint64_t>(newpos);
-			return 0; // success
-		}
+uint32_t _FseekFile(SystemServiceArguments* args) {
+	loader_file_descriptor_t* stream = __GET(loader_file_descriptor_t*, args->r0);
+	size_t offset = args->r1;
+	int whence = args->r2;
+	if (!stream) {
+		errno = EINVAL;
+		return -1;
 	}
 
-	// 2) regular file handle: use underlying FILE* fseek directly
-	{
-		std::lock_guard<std::mutex> lk(g_vfile_mutex);
-		auto fit = g_vfile_table.find(handle);
-		if (fit != g_vfile_table.end() && fit->second.fp) {
-			FILE* f = fit->second.fp;
-			int real_whence = SEEK_SET;
-			if (whence == 0) real_whence = SEEK_SET;
-			else if (whence == 1) real_whence = SEEK_CUR;
-			else if (whence == 2) real_whence = SEEK_END;
-			else return (uint32_t)-1;
-
-#if defined(_WIN32)
-			if (_fseeki64(f, static_cast<__int64>(raw_offset), real_whence) != 0) return (uint32_t)-1;
-#else
-			if (fseek(f, static_cast<long>(raw_offset), real_whence) != 0) return (uint32_t)-1;
-#endif
-			return 0;
-		}
+	size_t new_offset;
+	switch (whence) {
+	case _SYS_SEEK_SET: new_offset = offset; break;
+	case _SYS_SEEK_CUR: new_offset = stream->subfile_offset + offset; break;
+	case _SYS_SEEK_END: new_offset = stream->size + offset; break;
+	default: errno = EINVAL; return -1;
 	}
 
-	return (uint32_t)-1; // unknown handle
+	if (new_offset > stream->size) {
+		errno = EINVAL;
+		return -1;
+	}
+	stream->subfile_offset = new_offset;
+	printf("_FseekFile: %p+%zu(%d), result:0 (new offset:+%zu)\n", (void*)args->r0, offset, whence, new_offset);
+	return 0;
+}
+
+uint32_t _ReadFile(SystemServiceArguments* args) {
+	loader_file_descriptor_t* stream = __GET(loader_file_descriptor_t*, args->r0);
+	void* ptr = __GET(void*, args->r1);
+	size_t size = args->r2;
+	if (!stream || !ptr) {
+		errno = EINVAL;
+		return 0;
+	}
+
+	size_t bytes_remaining = stream->size - stream->subfile_offset;
+	if (bytes_remaining == 0) return 0;
+
+	size_t to_read = std::min(size, bytes_remaining);
+	size_t absolute_offset = stream->subfile_base + stream->subfile_offset;
+
+	auto& rhandle = g_vfile_table[stream->cart];
+
+	if (fseek(rhandle.fp, absolute_offset, SEEK_SET) != 0) {
+		return 0;
+	}
+
+	size_t bytes_read = fread(ptr, 1, to_read, rhandle.fp);
+	stream->subfile_offset += bytes_read;
+
+	printf("_ReadFile: %p %p %zu, result:%zu (abs_offset:%zu)\n", (void*)args->r0, ptr, size, bytes_read, absolute_offset);
+	return bytes_read;
 }

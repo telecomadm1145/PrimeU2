@@ -31,12 +31,15 @@ MemoryManager::MemoryManager()
 		fprintf(stderr, "FATAL: calloc for dynamic heap failed\n");
 		abort();
 	}
+	//auto ptr = malloc(0x4000);
+	//memset(ptr, 0, 0x4000);
+	//uc_mem_map_ptr(sExecutor->GetUcInstance(), 0, 0x4000, 3, ptr);
 
 	auto err = uc_mem_map_ptr(
 		sExecutor->GetUcInstance(),
 		MEM_DYNAMIC_HEAP_BASE,
 		pageAlignedSize,
-		UC_PROT_ALL,
+		3,
 		realMemory
 	);
 	if (err != UC_ERR_OK) {
@@ -81,7 +84,7 @@ bool MemoryManager::OverlapsAnyMappedBlock(VirtPtr addr, size_t size) const
 	return false;
 }
 
-ErrorCode MemoryManager::StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** memoryBlock)
+ErrorCode MemoryManager::StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** memoryBlock, int prot)
 {
 	if (size == 0) {
 		if (memoryBlock) *memoryBlock = nullptr;
@@ -102,7 +105,7 @@ ErrorCode MemoryManager::StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** me
 		return ERROR_MEM_ALLOC_FAIL;
 	}
 
-	auto err = uc_mem_map_ptr(sExecutor->GetUcInstance(), addr, pageAlignedSize, UC_PROT_ALL, realMemory);
+	auto err = uc_mem_map_ptr(sExecutor->GetUcInstance(), addr, pageAlignedSize, prot, realMemory);
 	if (err != UC_ERR_OK) {
 		free(realMemory);
 		return ERROR_UC_MAP;

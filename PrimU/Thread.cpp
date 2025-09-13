@@ -27,6 +27,7 @@ void ThreadState::LoadState()
 {
     if (!_isNewThread) {
         uc_context_restore(sExecutor->GetUcInstance(), _state);
+        return;
     }
 
     uc_reg_write_batch(sExecutor->GetUcInstance(), reinterpret_cast<int*>(_regs), reinterpret_cast<void**>(_args), 16);
@@ -44,6 +45,7 @@ void ThreadState::SaveState()
 
     size_t thumb;
     uc_query(sExecutor->GetUcInstance(), UC_QUERY_MODE, &thumb);
+    if (thumb) __debugbreak();
     _pc += (thumb & UC_MODE_THUMB) ? 1 : 0;
 
     if (_isNewThread)

@@ -12,6 +12,7 @@ uint32_t dbgMsg(SystemServiceArguments* args);
 uint32_t GetCurrentExecutable(SystemServiceArguments* args);
 uint32_t _FileSize(SystemServiceArguments* args);
 uint32_t _OpenSubFile(SystemServiceArguments* args);
+uint32_t _CloseFile(SystemServiceArguments* args);
 uint32_t _ReadFile(SystemServiceArguments* args);
 uint32_t _FseekFile(SystemServiceArguments* args);
 uint32_t prgrmIsRunning(SystemServiceArguments* args);
@@ -27,6 +28,8 @@ uint32_t _fwrite(SystemServiceArguments* args);
 uint32_t _fclose(SystemServiceArguments* args);
 
 uint32_t _filesize(SystemServiceArguments* args);
+
+uint32_t __fseek(SystemServiceArguments* args);
 
 uint32_t _fread(SystemServiceArguments* args);
 
@@ -49,6 +52,7 @@ uint32_t _amkdir(SystemServiceArguments* args);
 uint32_t _achdir(SystemServiceArguments* args);
 uint32_t _wchdir(SystemServiceArguments* args);
 uint32_t _wmkdir(SystemServiceArguments* args);
+uint32_t _wrmdir(SystemServiceArguments* args);
 uint32_t __wfopen(SystemServiceArguments* args);
 
 uint32_t OSCreateThread(SystemServiceArguments* args);
@@ -81,8 +85,6 @@ uint32_t _GetModuleFileNameA(SystemServiceArguments* args);
 
 uint32_t _afnsplit(SystemServiceArguments* args);
 uint32_t _afnmerge(SystemServiceArguments* args);
-
-uint32_t _CloseFile(SystemServiceArguments* args);
 
 uint32_t _aremove(SystemServiceArguments* args);
 

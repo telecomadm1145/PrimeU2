@@ -24,7 +24,7 @@ public:
     }
 
     // 静态映射：将一段主机内存映射到指定虚拟地址区间（一次性映射，不做子分配）
-    ErrorCode StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** memoryBlock = nullptr);
+    ErrorCode StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** memoryBlock = nullptr,int prot = 7);
     ErrorCode StaticFree(VirtPtr addr);
 
     void WriteCookie(VirtPtr addr);

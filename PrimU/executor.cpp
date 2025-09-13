@@ -15,16 +15,17 @@
 
 Executor* Executor::m_instance = nullptr;
 
+// BLOCK - 1
 #define STACK_MIN 0x20000000
 
 #define callAndcheckError(f) m_err = f; if (m_err != UC_ERR_OK) return false
 #define DEFINE_INTERRUPT(id, s, n, c) m_interrupts.insert(std::pair<InterruptID, InterruptHandle*>(id, new InterruptHandle(id, s, c, n)))
 
-static bool TryRead32(uc_engine * uc, uint32_t addr, uint32_t * out) {
+static bool TryRead32(uc_engine* uc, uint32_t addr, uint32_t* out) {
 	return uc_mem_read(uc, addr, out, sizeof(uint32_t)) == UC_ERR_OK;
 }
 
-static void PrintOneFrame(uc_engine * uc, csh cs, uint32_t addr, int idx) {
+static void PrintOneFrame(uc_engine* uc, csh cs, uint32_t addr, int idx) {
 	if (addr == 0) {
 		printf("#%02d 0x%08X\n", idx, addr);
 		return;
@@ -44,7 +45,7 @@ static void PrintOneFrame(uc_engine * uc, csh cs, uint32_t addr, int idx) {
 	printf("#%02d 0x%08X\n", idx, addr);
 }
 
-static void PrintStackTrace(uc_engine * uc) {
+static void PrintStackTrace(uc_engine* uc) {
 	uint32_t sp = 0, lr = 0, pc = 0, fp = 0, cpsr = 0;
 	uc_reg_read(uc, UC_ARM_REG_SP, &sp);
 	uc_reg_read(uc, UC_ARM_REG_LR, &lr);
@@ -169,13 +170,12 @@ void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 		lastUpdate = std::chrono::high_resolution_clock::now();
 		return;
 	}
-	if ((elapsed.count() < sThreadHandler->GetCurrentThreadQuantum() && canrun) ) {
+	if ((elapsed.count() < sThreadHandler->GetCurrentThreadQuantum() && canrun)) {
 		return;
 	}
 	uc_emu_stop(sExecutor->GetUcInstance());
 	sThreadHandler->SaveCurrentThreadState();
 
-	//printf(">>> Stopping at 0x%llX, instruction size = 0x%x\n", address, size);
 	lastUpdate = std::chrono::high_resolution_clock::now();
 }
 
@@ -203,24 +203,34 @@ bool Executor::Initialize(Executable* exec)
 }
 
 uc_hook m_page_fault;
-uc_hook m_page_fault2;
-uc_hook m_page_fault3;
-void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
+void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t value, void* user_data) {
 
 	uint32_t r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, sp, pc, lr;
 	void* args[16] = { &r0, &r1, &r2, &r3, &r4, &r5, &r6, &r7, &r8, &r9, &r10, &r11, &r12, &sp, &lr, &pc };
 	int regs[16] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
-
-	__debugbreak();
-	printf("Page fault triggered! \nThread: %i\nRegisters: \n", sThreadHandler->GetCurrentThreadId());
+	if (pc == 0x306E458C || address < 0x10)
+		return;
+	const char* errorType = (type == UC_MEM_READ_UNMAPPED) ? "read" :
+		(type == UC_MEM_WRITE_UNMAPPED) ? "written" :
+		(type == UC_MEM_FETCH_UNMAPPED) ? "executed" :
+		(type == UC_MEM_READ_PROT) ? "read" :
+		(type == UC_MEM_WRITE_PROT) ? "written" :
+		(type == UC_MEM_FETCH_PROT) ? "executed" : "???";
+	printf("Memory at %p cannot be %s. \nThread: %i\nRegisters: \n", (void*)address, errorType, sThreadHandler->GetCurrentThreadId());
 	printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n"
 		"    r5: %08X|%i\n    r6: %08X|%i\n    r7: %08X|%i\n    r8: %08X|%i\n    r9: %08X|%i\n"
 		"   r10: %08X|%i\n   r11: %08X|%i\n   r12: %08X|%i\n"
 		"    sp: %08X\n    pc: %08X\n    lr: %08X\n",
-		r0, r0, r1, r1, r2, r2, r3, r3, r4, r4, r5, r5, r6, r6, r7, r7, r8, r8,
+		r0, r0, r1, r1, r2, r2, r3, r3, r4, r4, r5, r5,+ r6, r6, r7, r7, r8, r8,
 		r9, r9, r10, r10, r11, r11, r12, r12, sp, pc, lr);
+	__debugbreak();
+	if (type == UC_MEM_FETCH_UNMAPPED || type == UC_MEM_FETCH_PROT) {
+		sThreadHandler->GetCurrentThread().Sleep(-1);
+		sThreadHandler->SwitchThread();
+	}
+
 
 	// ==================== 新增的反汇编代码块 START ====================
 	printf("\n--- Disassembly around PC (0x%08X) ---\n", pc);
@@ -303,13 +313,13 @@ void pf(uc_engine* uc, uint64_t address, uint32_t size, void* user_data) {
 	}
 	PrintStackTrace(uc);
 }
+
+// BLOCK - 1 - end
 bool Executor::Cleanup()
 {
 	callAndcheckError(uc_hook_del(m_uc, m_interrupt_hook));
 	callAndcheckError(uc_hook_del(m_uc, _codeHook));
-	callAndcheckError(uc_hook_del(m_uc, m_page_fault));
-	callAndcheckError(uc_hook_del(m_uc, m_page_fault2));
-	callAndcheckError(uc_hook_del(m_uc, m_page_fault3));
+	//callAndcheckError(uc_hook_del(m_uc, m_page_fault));
 	__check(sMemoryManager->StaticFree(LCD_REGISTER), ERROR_OK, false);
 	callAndcheckError(uc_close(m_uc));
 }
@@ -320,9 +330,7 @@ bool Executor::InitInterrupts()
 	sMemoryManager->StaticAlloc(RTC_REGISTER, 0x100);
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
-	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_READ_UNMAPPED, pf, 0, 1, 0));
-	callAndcheckError(uc_hook_add(m_uc, &m_page_fault2, UC_HOOK_MEM_WRITE_UNMAPPED, pf, 0, 1, 0));
-	callAndcheckError(uc_hook_add(m_uc, &m_page_fault3, UC_HOOK_MEM_FETCH_UNMAPPED, pf, 0, 1, 0));
+	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_INVALID, pf, 0, 1, 0));
 	return true;
 }
 void Executor::Execute()
@@ -370,9 +378,12 @@ void Executor::Execute()
 				pc_addr += 4;
 			}
 			uc_reg_write(m_uc, UC_ARM_REG_PC, &pc_addr);
+			//			uint32_t pc = 0;
+			//uc_reg_read(m_uc, UC_ARM_REG_LR, &pc);
+			//uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
 			sThreadHandler->SaveCurrentThreadState();
 		}
-			//break;
+		//break;
 		sThreadHandler->SwitchThread();
 	}
 

@@ -291,20 +291,36 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		// 如果 LCD 缓冲区存在，首先绘制它
 		if (lcd && lcd->buffer) {
 			uint32_t* tempBuffer = new uint32_t[lcd->xRes * lcd->yRes];
+			struct RGB555 {
+				uint16_t b : 8;
+				uint16_t g : 8;
+				uint16_t r : 8;
+			};
+
+			struct ARGB32 {
+				uint8_t b;
+				uint8_t g;
+				uint8_t r;
+				uint8_t a;
+			};
+
 			for (int i = 0; i < lcd->xRes * lcd->yRes; i++) {
-				uint16_t rgb555 = lcd->buffer[i];
-				uint8_t r = (rgb555 >> 10) & 0x1F;
-				uint8_t g = (rgb555 >> 5) & 0x1F;
-				uint8_t b = rgb555 & 0x1F;
-				r = (r << 3) | (r >> 2);
-				g = (g << 3) | (g >> 2);
-				b = (b << 3) | (b >> 2);
+				RGB555 pixel = *reinterpret_cast<RGB555*>(&((uint8_t*)lcd->buffer)[i * 4]);
+
+				// 扩展 5 位到 8 位
+				uint8_t r = pixel.r;
+				uint8_t g = pixel.g;
+				uint8_t b = pixel.b;
+
 				auto level = sLCDHandler->brightness_level / 4.0 + 0.25; // 亮度等级
-				r *= level;
-				g *= level;
-				b *= level;
-				tempBuffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+				r = static_cast<uint8_t>(r * level);
+				g = static_cast<uint8_t>(g * level);
+				b = static_cast<uint8_t>(b * level);
+
+				ARGB32 argb = { b, g, r, 0xFF };
+				tempBuffer[i] = *reinterpret_cast<uint32_t*>(&argb);
 			}
+
 			BITMAPINFO bi = { 0 };
 			bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
 			bi.bmiHeader.biWidth = lcd->xRes;

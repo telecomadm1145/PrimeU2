@@ -216,7 +216,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB___fflush, HANDLE_NAMEONLY, "__fflush", nullptr);
 	REGISTER_HANDLER(SDKLIB__fflushall, HANDLE_NAMEONLY, "_fflushall", nullptr);
 	REGISTER_HANDLER(SDKLIB__rewind, HANDLE_NAMEONLY, "_rewind", nullptr);
-	REGISTER_HANDLER(SDKLIB___fseek, HANDLE_NAMEONLY, "__fseek", nullptr);
+	REGISTER_HANDLER(SDKLIB___fseek, HANDLE_NAMEONLY, "__fseek", __fseek);
 	REGISTER_HANDLER(SDKLIB__ftell, HANDLE_NAMEONLY, "_ftell", nullptr);
 	REGISTER_HANDLER(SDKLIB__feof, HANDLE_NAMEONLY, "_feof", nullptr);
 	REGISTER_HANDLER(SDKLIB__fgetc, HANDLE_NAMEONLY, "_fgetc", nullptr);
@@ -641,7 +641,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__wrename, HANDLE_NAMEONLY, "_wrename", nullptr);
 	REGISTER_HANDLER(SDKLIB__wfcopy, HANDLE_NAMEONLY, "_wfcopy", nullptr);
 	REGISTER_HANDLER(SDKLIB__wmkdir, HANDLE_NAMEONLY, "_wmkdir", _wmkdir);
-	REGISTER_HANDLER(SDKLIB__wrmdir, HANDLE_NAMEONLY, "_wrmdir", nullptr);
+	REGISTER_HANDLER(SDKLIB__wrmdir, HANDLE_NAMEONLY, "_wrmdir", _wrmdir);
 	REGISTER_HANDLER(SDKLIB__wchdir, HANDLE_NAMEONLY, "_wchdir", _wchdir);
 	REGISTER_HANDLER(SDKLIB__wgetcurdir, HANDLE_NAMEONLY, "_wgetcurdir", nullptr);
 	REGISTER_HANDLER(SDKLIB__afsettime, HANDLE_NAMEONLY, "_afsettime", nullptr);
