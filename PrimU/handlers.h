@@ -14,6 +14,7 @@ uint32_t _FileSize(SystemServiceArguments* args);
 uint32_t _OpenSubFile(SystemServiceArguments* args);
 uint32_t _CloseFile(SystemServiceArguments* args);
 uint32_t _ReadFile(SystemServiceArguments* args);
+uint32_t FSGetDiskRoomState(SystemServiceArguments* args);
 uint32_t _FseekFile(SystemServiceArguments* args);
 uint32_t prgrmIsRunning(SystemServiceArguments* args);
 uint32_t ProgramIsRunningW(SystemServiceArguments* args);

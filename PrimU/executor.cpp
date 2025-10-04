@@ -159,9 +159,25 @@ void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_d
 void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
 	static auto lastUpdate = std::chrono::high_resolution_clock::now();
+	static auto last_int = std::chrono::high_resolution_clock::now();
 
 	auto now = std::chrono::high_resolution_clock::now();
 	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
+	std::chrono::milliseconds elapsed_2 = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_int);
+	using std::chrono_literals::operator""ms;
+	if(elapsed_2 > 5000ms && sThreadHandler->GetCurrentThreadId() == 0 && sThreadHandler->interruptPC) {
+		// Lets entering a interrupt here.
+		last_int = now;
+		//sThreadHandler->SaveCurrentThreadState();
+		//printf("Entering interrupt at %08X\n", sThreadHandler->interruptPC);
+		//uc_reg_write(uc, UC_ARM_REG_PC, &sThreadHandler->interruptPC);
+		return;
+	}
+	if(sThreadHandler->interruptPC == 0xAAAAAAAA) {
+		sThreadHandler->interruptPC = 0;
+		//sThreadHandler->LoadCurrentThreadState();
+		return;
+	}
 	bool canrun = sThreadHandler->CanCurrentThreadRun();
 	if (sThreadHandler->yielding) {
 		uc_emu_stop(sExecutor->GetUcInstance());
@@ -203,6 +219,7 @@ bool Executor::Initialize(Executable* exec)
 }
 
 uc_hook m_page_fault;
+uc_hook m_tmp;
 void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t value, void* user_data) {
 
 	uint32_t r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, sp, pc, lr;
@@ -210,8 +227,19 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 	int regs[16] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
-	if (pc == 0x306E458C || address < 0x10)
+	if (address < 0x10)
 		return;
+	if (pc == 0x306A5F3C || pc == 0x306A5ED4)
+	{
+		uc_reg_write(uc, UC_ARM_REG_PC, &lr);
+		return;
+	}
+	if (type == UC_MEM_FETCH_UNMAPPED || type == UC_MEM_FETCH_PROT) {
+		if (pc < 0x1000) {
+			uc_reg_write(uc, UC_ARM_REG_PC, &lr);
+			return;
+		}
+	}
 	const char* errorType = (type == UC_MEM_READ_UNMAPPED) ? "read" :
 		(type == UC_MEM_WRITE_UNMAPPED) ? "written" :
 		(type == UC_MEM_FETCH_UNMAPPED) ? "executed" :
@@ -225,11 +253,6 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 		"    sp: %08X\n    pc: %08X\n    lr: %08X\n",
 		r0, r0, r1, r1, r2, r2, r3, r3, r4, r4, r5, r5,+ r6, r6, r7, r7, r8, r8,
 		r9, r9, r10, r10, r11, r11, r12, r12, sp, pc, lr);
-	__debugbreak();
-	if (type == UC_MEM_FETCH_UNMAPPED || type == UC_MEM_FETCH_PROT) {
-		sThreadHandler->GetCurrentThread().Sleep(-1);
-		sThreadHandler->SwitchThread();
-	}
 
 
 	// ==================== 新增的反汇编代码块 START ====================
@@ -313,7 +336,6 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 	}
 	PrintStackTrace(uc);
 }
-
 // BLOCK - 1 - end
 bool Executor::Cleanup()
 {
@@ -331,6 +353,7 @@ bool Executor::InitInterrupts()
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_INVALID, pf, 0, 1, 0));
+	//callAndcheckError(uc_hook_add(m_uc, &m_tmp, UC_HOOK_CODE, co_hook, 0, 0x30680A40, 0x30680A40 + 1));
 	return true;
 }
 void Executor::Execute()
@@ -378,9 +401,7 @@ void Executor::Execute()
 				pc_addr += 4;
 			}
 			uc_reg_write(m_uc, UC_ARM_REG_PC, &pc_addr);
-			//			uint32_t pc = 0;
-			//uc_reg_read(m_uc, UC_ARM_REG_LR, &pc);
-			//uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
+
 			sThreadHandler->SaveCurrentThreadState();
 		}
 		//break;
@@ -504,7 +525,7 @@ void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_d
 
 	SVC &= 0xFFFFF;
 
-	uint32_t return_value = sSystemAPI->Call(static_cast<InterruptID>(SVC), SystemServiceArguments());
+	uint32_t return_value = sSystemAPI->Call(static_cast<InterruptID>(SVC), SystemServiceArguments(lr - 4));
 	// printf("    Caller: %08X\n    PC: %08X\n", lr - 4, pc);
 	sp += 8;
 

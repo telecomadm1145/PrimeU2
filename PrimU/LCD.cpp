@@ -280,6 +280,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		// Trigger a repaint to update the screen
 		// 触发重绘以更新屏幕
 		InvalidateRect(hwnd, NULL, FALSE);
+		static int i = 0;
+		if (i++ > 10)
+			EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_SYS_TIMER), i = 0;
 		return 0;
 	}
 
@@ -517,6 +520,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			uime.touch_y = static_cast<uint16_t>(y);
 			uime.type = UI_EVENT_TYPE_TOUCH_BEGIN;
 			EnqueueEvent(uime);
+
+			static bool event_fixes = false;
+			if (!event_fixes) {
+				auto c = __GET(unsigned long long*, 0x30D35C24);
+				*c = 0;
+				printf("Touch fixes patched\n");
+				event_fixes = true;
+			}
 		}
 		is_lbtn_down = true; break;
 	}

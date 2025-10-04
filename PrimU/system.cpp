@@ -779,9 +779,9 @@ uint32_t _SetPrivateProfileString(SystemServiceArguments* args)
 	}
 }
 
-#define DUMPARGS printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", \
+#define DUMPARGS printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n    pc:%08X\n", \
     args->r0, args->r0, args->r1, args->r1, args->r2,\
-    args->r2, args->r3, args->r3, args->r4, args->r4, args->sp)
+    args->r2, args->r3, args->r3, args->r4, args->r4, args->sp,args->caller_pc)
 
 VirtPtr struc = 0;
 
@@ -903,6 +903,9 @@ uint32_t LCDOn(SystemServiceArguments* args)
 	return 0;
 }
 uint32_t SetSystemVariable(SystemServiceArguments* args) {
+	if (args->r0 == 89) {
+		return 0x1919810;
+	}
 	printf("    + sys.var %d (type %d) <- %d\n", args->r0, args->r1, args->r2);
 	if (args->r0 == 6) {
 		if (args->r1 == 2) {
@@ -1491,7 +1494,7 @@ short find_next_internal(VirtPtr ctx_vptr) {
 		}
 
 		// --- MATCH FOUND ---
-		// printf("    +findnext: found '%s'\n", filename_u8.c_str());
+		printf("    +findnext: found '%s'\n", filename_u8.c_str());
 
 		// Populate guest context structure
 		std::error_code ec;
@@ -1754,12 +1757,15 @@ uint32_t CloseHandle(SystemServiceArguments* args) {
 }
 
 uint32_t InterruptInitialize(SystemServiceArguments* args) {
+	printf("   +InterruptInitialize -> %p\n", (void*)args->r2);
 	return sThreadHandler->interruptPC = (args->r2);
 }
 uint32_t InterruptDone(SystemServiceArguments* args) {
+	printf("A\n");
 	if (sThreadHandler->interrupting) {
 		printf("Stop emu!\n");
 		sThreadHandler->interruptPC = 0xAAAAAAAA;
+		sThreadHandler->SwitchThread();
 	}
 	return 0;
 }
@@ -1781,15 +1787,26 @@ void EnqueueEvent(UIMultipressEvent uime) {
 
 	sThreadHandler->WakeThread(_ui_thread_id);
 }
+std::atomic<int> special_event = 0;
+void EnqueueSpecial(int val) {
+	special_event.store(val);
+}
 uint32_t GetEvent(SystemServiceArguments* args)
 {
+	//DUMPARGS;
 	auto& event = *__GET(ui_event_prime_s*, args->r0);
 	event = {}; // 初始化事件结构体
-
+	int k;
+	if (k = special_event.load()) {
+		event.available_multipress_events = 0;
+		special_event.store(0);
+		event.event_type = (ui_event_type_e)k;
+		return 0;
+	}
 	std::lock_guard lg(lock); // 加锁保护 events 队列
 
 	// 1. 设置默认事件类型
-	event.event_type = UI_EVENT_TYPE_TICK;
+	event.event_type = UI_EVENT_TYPE_TOUCH;
 	event.available_multipress_events = 0;
 
 	if (!events.empty()) {
@@ -1800,7 +1817,7 @@ uint32_t GetEvent(SystemServiceArguments* args)
 
 		// 3. 如果存在按键事件，则更新主事件类型
 		if (hasKeyEvent) {
-			event.event_type = UI_EVENT_TYPE_TICK_2;
+			event.event_type = UI_EVENT_TYPE_KEY_BATCH;
 		}
 
 		// 防止溢出的安全检查
@@ -1820,6 +1837,7 @@ uint32_t GetEvent(SystemServiceArguments* args)
 		// 如果没有事件，则线程让出，等待新事件
 		_ui_thread_id = sThreadHandler->GetCurrentThreadId();
 		sThreadHandler->CurrentThreadYield();
+		event.event_type = UI_EVENT_TYPE_INVALID;
 	}
 
 	return 0;
@@ -2175,7 +2193,7 @@ uint32_t _FseekFile(SystemServiceArguments* args) {
 		return -1;
 	}
 	stream->subfile_offset = new_offset;
-	printf("_FseekFile: %p+%zu(%d), result:0 (new offset:+%zu)\n", (void*)args->r0, offset, whence, new_offset);
+	//printf("_FseekFile: %p+%zu(%d), result:0 (new offset:+%zu)\n", (void*)args->r0, offset, whence, new_offset);
 	return 0;
 }
 
@@ -2203,6 +2221,12 @@ uint32_t _ReadFile(SystemServiceArguments* args) {
 	size_t bytes_read = fread(ptr, 1, to_read, rhandle.fp);
 	stream->subfile_offset += bytes_read;
 
-	printf("_ReadFile: %p %p %zu, result:%zu (abs_offset:%zu)\n", (void*)args->r0, ptr, size, bytes_read, absolute_offset);
+	//printf("_ReadFile: %p %p %zu, result:%zu (abs_offset:%zu)\n", (void*)args->r0, ptr, size, bytes_read, absolute_offset);
 	return bytes_read;
+}
+uint32_t FSGetDiskRoomState(SystemServiceArguments* args) {
+	DUMPARGS;
+	auto dat = __GET(uint32_t*, args->r1 + 52);
+	dat[0] = 0x114514;
+	return 0;
 }

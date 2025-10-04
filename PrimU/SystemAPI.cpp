@@ -244,7 +244,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__getdiskchar, HANDLE_NAMEONLY, "_getdiskchar", nullptr);
 	REGISTER_HANDLER(SDKLIB__setdiskchar, HANDLE_NAMEONLY, "_setdiskchar", nullptr);
 	REGISTER_HANDLER(SDKLIB__getdisknum, HANDLE_NAMEONLY, "_getdisknum", nullptr);
-	REGISTER_HANDLER(SDKLIB_FSGetDiskRoomState, HANDLE_NAMEONLY, "FSGetDiskRoomState", nullptr);
+	REGISTER_HANDLER(SDKLIB_FSGetDiskRoomState, HANDLE_NAMEONLY, "FSGetDiskRoomState", FSGetDiskRoomState);
 	REGISTER_HANDLER(SDKLIB__OpenFile, HANDLE_IMPLEMENTED, "_OpenFile", _OpenFile);
 	REGISTER_HANDLER(SDKLIB__OpenFileEx, HANDLE_NAMEONLY, "_OpenFileEx", nullptr);
 	REGISTER_HANDLER(SDKLIB__OpenFileW, HANDLE_NAMEONLY, "_OpenFileW", nullptr);
@@ -775,7 +775,7 @@ uint32_t SystemAPI::Call(InterruptID id, SystemServiceArguments args)
 			//printf("    r0: %08X|%i\n    r1: %08X|%i\n    r2: %08X|%i\n    r3: %08X|%i\n    r4: %08X|%i\n    sp: %08X\n", args.r0, args.r0, args.r1,
 			//	args.r1, args.r2, args.r2, args.r3, args.r3, args.r4, args.r4, args.sp);
 			auto ret = _handle->Callback(&args);
-			//printf("    result: %08X|%i\n", ret, ret);
+			///printf("    result: %08X|%i\n", ret, ret);
 			return ret;
 		}
 		else {

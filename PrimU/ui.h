@@ -339,11 +339,15 @@ enum ui_event_type_e : int {
 	 */
 	UI_EVENT_TYPE_TOUCH_END = 8,
 
-	UI_EVENT_TYPE_TICK = 0xf,
+	UI_EVENT_TYPE_TOUCH = 0xf,
 
-	UI_EVENT_TYPE_TICK_2 = 0x100010,
+	UI_EVENT_TYPE_KEY_BATCH = 0x100010,
 	
-	UI_EVENT_TYPE_REDRAW = 0x4000,
+	UI_EVENT_TYPE_SYS_TIMER = 0x4000,
+
+	UI_EVENT_TYPE_INDICATOR_TIMER = 0x20,
+
+	UI_EVENT_TYPE_INTERNAL_KEY = 0x100,
 	/**
 	 * @brief Key(s) pressed.
 	 */
@@ -481,3 +485,4 @@ struct ui_event_prime_s {
 
 
 void EnqueueEvent(UIMultipressEvent uime);
+void EnqueueSpecial(int val);
