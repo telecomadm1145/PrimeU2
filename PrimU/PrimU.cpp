@@ -8,13 +8,13 @@
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
-    {
-        printf("Usage: %s armfir.elf\n", argv[0]);
-        return 1;
-    }
+    //if (argc != 2)
+    //{
+    //    printf("Usage: %s armfir.elf\n", argv[0]);
+    //    return 1;
+    //}
 
-    Executable exec(argv[1]);
+    Executable exec((char*)"prime_data\\A\\programs\\misc\\armfir.elf");
 
     if (exec.get_state() == EXEC_LOAD_FAILED)
     {
