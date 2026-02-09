@@ -32,6 +32,8 @@ uint32_t _filesize(SystemServiceArguments* args);
 
 uint32_t __fseek(SystemServiceArguments* args);
 
+uint32_t __ftell(SystemServiceArguments* args);
+
 uint32_t _fread(SystemServiceArguments* args);
 
 uint32_t OSSetEvent(SystemServiceArguments* args);

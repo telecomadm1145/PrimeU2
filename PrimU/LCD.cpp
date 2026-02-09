@@ -451,7 +451,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		if (it != vk_to_device_keymap.end()) {
 			UIMultipressEvent uime{};
 			uime.key_code0 = it->second; // Use the mapped value
-			uime.type = UI_EVENT_TYPE_KEY;
+			uime.status = UI_EVENT_TYPE_KEY;
 			EnqueueEvent(uime);
 			return 0; // We handled the message
 		}
@@ -498,7 +498,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		if (it != vk_to_device_keymap.end()) {
 			UIMultipressEvent uime{};
 			uime.key_code0 = it->second; // Use the mapped value
-			uime.type = UI_EVENT_TYPE_KEY_UP;
+			uime.status = UI_EVENT_TYPE_KEY_UP;
 			EnqueueEvent(uime);
 			return 0; // We handled the message
 		}
@@ -515,19 +515,19 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		{
 			auto x = LOWORD(lParam);
 			auto y = HIWORD(lParam);
-			UIMultipressEvent uime{};
-			uime.touch_x = static_cast<uint16_t>(x);
-			uime.touch_y = static_cast<uint16_t>(y);
-			uime.type = UI_EVENT_TYPE_TOUCH_BEGIN;
-			EnqueueEvent(uime);
+			//UIMultipressEvent uime{};
+			//uime.touch_x = static_cast<uint16_t>(x);
+			//uime.touch_y = static_cast<uint16_t>(y);
+			//uime.status = UI_EVENT_TYPE_TOUCH_BEGIN;
+			TouchUpdate(x, y, 0, UI_EVENT_TYPE_TOUCH_BEGIN);
 
-			static bool event_fixes = false;
-			if (!event_fixes) {
-				auto c = __GET(unsigned long long*, 0x30D35C24);
-				*c = 0;
-				printf("Touch fixes patched\n");
-				event_fixes = true;
-			}
+			//static bool event_fixes = false;
+			//if (!event_fixes) {
+			//	auto c = __GET(unsigned long long*, 0x30D57AEC);
+			//	*c = 0;
+			//	printf("Touch fixes patched\n");
+			//	event_fixes = true;
+			//}
 		}
 		is_lbtn_down = true; break;
 	}
@@ -535,11 +535,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		{
 			auto x = LOWORD(lParam);
 			auto y = HIWORD(lParam);
-			UIMultipressEvent uime{};
-			uime.touch_x = static_cast<uint16_t>(x);
-			uime.touch_y = static_cast<uint16_t>(y);
-			uime.type = UI_EVENT_TYPE_TOUCH_END;
-			EnqueueEvent(uime);
+			TouchUpdate(x, y, 0, UI_EVENT_TYPE_TOUCH_END);
 		}
 		is_lbtn_down = false; break;
 	}
@@ -547,11 +543,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		if (is_lbtn_down) {
 			auto x = LOWORD(lParam);
 			auto y = HIWORD(lParam);
-			UIMultipressEvent uime{};
-			uime.touch_x = static_cast<uint16_t>(x);
-			uime.touch_y = static_cast<uint16_t>(y);
-			uime.type = UI_EVENT_TYPE_TOUCH_MOVE;
-			EnqueueEvent(uime);
+			TouchUpdate(x, y, 0, UI_EVENT_TYPE_TOUCH_MOVE);
 		}
 		break;
 	}

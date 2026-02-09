@@ -370,7 +370,7 @@ struct UIMultipressEvent {
 	 * @brief Type of event.
 	 * @see ui_event_type_e List of event types.
 	 */
-	unsigned int type;
+	unsigned int status;
 	/**
 	 * @brief Finger ID of a touch event.
 	 */
@@ -486,3 +486,5 @@ struct ui_event_prime_s {
 
 void EnqueueEvent(UIMultipressEvent uime);
 void EnqueueSpecial(int val);
+
+void TouchUpdate(int x, int y, int finger_id, ui_event_type_e status);

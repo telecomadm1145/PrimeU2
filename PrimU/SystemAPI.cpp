@@ -217,7 +217,7 @@ SystemAPI::SystemAPI()
 	REGISTER_HANDLER(SDKLIB__fflushall, HANDLE_NAMEONLY, "_fflushall", nullptr);
 	REGISTER_HANDLER(SDKLIB__rewind, HANDLE_NAMEONLY, "_rewind", nullptr);
 	REGISTER_HANDLER(SDKLIB___fseek, HANDLE_NAMEONLY, "__fseek", __fseek);
-	REGISTER_HANDLER(SDKLIB__ftell, HANDLE_NAMEONLY, "_ftell", nullptr);
+	REGISTER_HANDLER(SDKLIB__ftell, HANDLE_NAMEONLY, "_ftell", __ftell);
 	REGISTER_HANDLER(SDKLIB__feof, HANDLE_NAMEONLY, "_feof", nullptr);
 	REGISTER_HANDLER(SDKLIB__fgetc, HANDLE_NAMEONLY, "_fgetc", nullptr);
 	REGISTER_HANDLER(SDKLIB__fgets, HANDLE_NAMEONLY, "_fgets", nullptr);

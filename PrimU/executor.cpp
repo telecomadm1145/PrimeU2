@@ -162,10 +162,11 @@ void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 	static auto last_int = std::chrono::high_resolution_clock::now();
 
 	auto now = std::chrono::high_resolution_clock::now();
+	*__GET(uint32_t*, 0x51000040) = now.time_since_epoch().count() / 1000; // Update system time for the guest (in milliseconds)
 	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
 	std::chrono::milliseconds elapsed_2 = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_int);
 	using std::chrono_literals::operator""ms;
-	if(elapsed_2 > 5000ms && sThreadHandler->GetCurrentThreadId() == 0 && sThreadHandler->interruptPC) {
+	if (elapsed_2 > 5000ms && sThreadHandler->GetCurrentThreadId() == 0 && sThreadHandler->interruptPC) {
 		// Lets entering a interrupt here.
 		last_int = now;
 		//sThreadHandler->SaveCurrentThreadState();
@@ -173,7 +174,7 @@ void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 		//uc_reg_write(uc, UC_ARM_REG_PC, &sThreadHandler->interruptPC);
 		return;
 	}
-	if(sThreadHandler->interruptPC == 0xAAAAAAAA) {
+	if (sThreadHandler->interruptPC == 0xAAAAAAAA) {
 		sThreadHandler->interruptPC = 0;
 		//sThreadHandler->LoadCurrentThreadState();
 		return;
@@ -251,7 +252,7 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 		"    r5: %08X|%i\n    r6: %08X|%i\n    r7: %08X|%i\n    r8: %08X|%i\n    r9: %08X|%i\n"
 		"   r10: %08X|%i\n   r11: %08X|%i\n   r12: %08X|%i\n"
 		"    sp: %08X\n    pc: %08X\n    lr: %08X\n",
-		r0, r0, r1, r1, r2, r2, r3, r3, r4, r4, r5, r5,+ r6, r6, r7, r7, r8, r8,
+		r0, r0, r1, r1, r2, r2, r3, r3, r4, r4, r5, r5, +r6, r6, r7, r7, r8, r8,
 		r9, r9, r10, r10, r11, r11, r12, r12, sp, pc, lr);
 
 

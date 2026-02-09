@@ -32,8 +32,8 @@ static std::mutex g_vfile_mutex;
 // 虚拟文件表结构
 struct VFile {
 	FILE* fp = nullptr;
-	std::string hostPath;
-	std::string mode;
+	std::wstring hostPath;
+	std::wstring mode;
 };
 
 static std::unordered_map<uint32_t, VFile> g_vfile_table;
@@ -80,6 +80,10 @@ static std::string normalize_slashes(std::string s) {
 static std::string wstr_to_utf8(const std::wstring& w) {
 	std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> conv;
 	return conv.to_bytes(w);
+}
+static std::wstring utf8_to_wstr(const std::string& w) {
+	std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> conv;
+	return conv.from_bytes(w);
 }
 
 // 根据 vmPath（可能带驱动字母、以 '\' 开头、或相对路径）映射到宿主路径
@@ -131,10 +135,10 @@ static std::string MapVMPathToHost(const char* vmPath) {
 	}
 }
 
-static std::string MapVMPathToHostW(const wchar_t* vmPath) {
-	if (!vmPath) return MapVMPathToHost(nullptr);
+static std::wstring MapVMPathToHostW(const wchar_t* vmPath) {
+	if (!vmPath) return utf8_to_wstr(MapVMPathToHost(nullptr));
 	std::wstring ws(vmPath);
-	return MapVMPathToHost(wstr_to_utf8(ws).c_str());
+	return utf8_to_wstr(MapVMPathToHost(wstr_to_utf8(ws).c_str()));
 }
 static std::string MapHostPathToVM(const char* hostPath) {
 	std::call_once(g_init_flag, ensure_prime_drive_roots_initialized);
@@ -200,7 +204,7 @@ static std::string MapHostPathToVM(const char* hostPath) {
 
 
 // helper: 将 vm 指定的 filename 映射，确保父目录存在（当 write/create 时）
-static bool ensure_parent_dirs_for_hostpath(const std::string& hostPath) {
+static bool ensure_parent_dirs_for_hostpath(const auto& hostPath) {
 	try {
 		fs::path p(hostPath);
 		fs::path parent = p.parent_path();
@@ -224,10 +228,10 @@ uint32_t __afopen(SystemServiceArguments* args)
 	const char* vmname = __GET(char*, args->r0);
 	const char* vmflags = __GET(char*, args->r1);
 	if (!vmname) return 0;
-	std::string hostPath = MapVMPathToHost(vmname);
-	std::string mode = vmflags ? std::string(vmflags) : std::string("rb");
+	std::wstring hostPath = utf8_to_wstr(MapVMPathToHost(vmname));
+	std::wstring mode = vmflags ? utf8_to_wstr(vmflags) : std::wstring(L"rb");
 
-	printf("    +VM name: %s\n    +flags: %s\n    +Mapped host path: %s\n",
+	wprintf(L"    +VM name: %s\n    +flags: %s\n    +Mapped host path: %s\n",
 		vmname, vmflags ? vmflags : "(null)", hostPath.c_str());
 
 	// 如果是写模式，确保目录存在
@@ -235,15 +239,15 @@ uint32_t __afopen(SystemServiceArguments* args)
 		ensure_parent_dirs_for_hostpath(hostPath);
 	}
 
-	FILE* f = fopen(hostPath.c_str(), mode.c_str());
-	if (!f) {
-		// 试着在文本模式/二进制模式之间切换（容错）
-		if (mode.find('b') == std::string::npos) {
-			std::string m2 = mode + "b";
-			f = fopen(hostPath.c_str(), m2.c_str());
-			if (f) mode = m2;
-		}
-	}
+	FILE* f = _wfopen(hostPath.c_str(), mode.c_str());
+	//if (!f) {
+	//	// 试着在文本模式/二进制模式之间切换（容错）
+	//	if (mode.find('b') == std::string::npos) {
+	//		std::string m2 = mode + "b";
+	//		f = fopen(hostPath.c_str(), m2.c_str());
+	//		if (f) mode = m2;
+	//	}
+	//}
 
 	if (!f) {
 		printf("    _OpenFile: fopen failed for %s\n", hostPath.c_str());
@@ -263,26 +267,19 @@ uint32_t __wfopen(SystemServiceArguments* args)
 	const wchar_t* wname = __GET(wchar_t*, args->r0);
 	const wchar_t* wflags = __GET(wchar_t*, args->r1);
 
-	std::string hostPath = wname ? MapVMPathToHostW(wname) : MapVMPathToHost(nullptr);
-	std::string mode = wflags ? wstr_to_utf8(std::wstring(wflags)) : std::string("rb");
+	std::wstring hostPath = MapVMPathToHostW(wname);
+	std::wstring mode = wflags ? std::wstring(wflags) : std::wstring(L"rb");
 
-	printf("    +__wfopen VM name: %ls\n    +flags: %ls\n    +Mapped host path: %s\n",
+	wprintf(L"    +__wfopen VM name: %ls\n    +flags: %ls\n    +Mapped host path: %s\n",
 		wname ? wname : L"(null)", wflags ? wflags : L"(null)", hostPath.c_str());
 
 	if (mode.find('w') != std::string::npos || mode.find('a') != std::string::npos) {
 		ensure_parent_dirs_for_hostpath(hostPath);
 	}
-	if (!fs::exists(hostPath)) {
-		fclose(fopen(hostPath.c_str(), "w"));
-	}
-	FILE* f = fopen(hostPath.c_str(), mode.c_str());
-	if (!f) {
-		if (mode.find('b') == std::string::npos) {
-			std::string m2 = mode + "b";
-			f = fopen(hostPath.c_str(), m2.c_str());
-			if (f) mode = m2;
-		}
-	}
+	//if (!fs::exists(hostPath)) {
+	//	fclose(fopen(hostPath.c_str(), "w"));
+	//}
+	FILE* f = _wfopen(hostPath.c_str(), mode.c_str());
 	if (!f)
 		return 0;
 
@@ -467,8 +464,8 @@ uint32_t _wmkdir(SystemServiceArguments* args)
 
 	try {
 		// MapVMPathToHostW 是 MapVMPathToHost 的宽字符版本
-		std::string hostPath = MapVMPathToHostW(vmname);
-		printf("    +Mapped host path: %s\n", hostPath.c_str());
+		std::wstring hostPath = MapVMPathToHostW(vmname);
+		wprintf(L"    +Mapped host path: %s\n", hostPath.c_str());
 
 		fs::path p(hostPath);
 		if (!fs::exists(p))
@@ -490,8 +487,8 @@ uint32_t _wrmdir(SystemServiceArguments* args)
 
 	try {
 		// MapVMPathToHostW 是 MapVMPathToHost 的宽字符版本
-		std::string hostPath = MapVMPathToHostW(vmname);
-		printf("    +Mapped host path: %s\n", hostPath.c_str());
+		std::wstring hostPath = MapVMPathToHostW(vmname);
+		wprintf(L"    +Mapped host path: %s\n", hostPath.c_str());
 
 		fs::path p(hostPath);
 		fs::remove(p);
@@ -1190,8 +1187,25 @@ uint32_t __fseek(SystemServiceArguments* args)
 	size_t offset = args->r1;
 	int whence = args->r2;
 	_fseeki64(f, (long long)offset, whence);
-	printf("__fseek: %p+%zu(%d), result:0\n", (void*)args->r0, offset, whence);
+	// printf("__fseek: %p+%zu(%d), result:0\n", (void*)args->r0, offset, whence);
 	return 0;
+}
+
+uint32_t __ftell(SystemServiceArguments* args)
+{
+	uint32_t handle = args->r0;
+	if (handle == 0) return -1;
+
+	std::lock_guard<std::mutex> lk(g_vfile_mutex);
+	auto it = g_vfile_table.find(handle);
+	if (it == g_vfile_table.end()) return -1;
+	FILE* f = it->second.fp;
+	if (!f) return -1;
+	//size_t offset = args->r1;
+	//int whence = args->r2;
+	//_fseeki64(f, (long long)offset, whence);
+	// printf("__fseek: %p+%zu(%d), result:0\n", (void*)args->r0, offset, whence);
+	return ftell(f);
 }
 // --------- _fread: read from current file pointer into VM memory ----------
 uint32_t _fread(SystemServiceArguments* args)
@@ -1211,7 +1225,7 @@ uint32_t _fread(SystemServiceArguments* args)
 	void* dest = __GET(void*, destVPtr);
 	if (!dest) return 0;
 
-	printf("    +_fread path: %s, size: %u\n", it->second.hostPath.c_str(), size);
+	// printf("    +_fread path: %s, size: %u\n", it->second.hostPath.c_str(), size);
 
 	size_t read = fread(dest, 1, static_cast<size_t>(size), f);
 	if (read == 0) {
@@ -1244,7 +1258,7 @@ typedef struct {
 	VirtPtr filename_lfn;
 	VirtPtr filename;
 	VirtPtr filename2_alt;
-	size_t size;
+	uint32_t size;
 	unsigned int mtime;
 	unsigned int btime;
 	unsigned int atime;
@@ -1499,11 +1513,11 @@ short find_next_internal(VirtPtr ctx_vptr) {
 		// Populate guest context structure
 		std::error_code ec;
 		guest_ctx->size = fs::is_regular_file(entry.status(ec)) ? fs::file_size(entry, ec) : 0;
-		//guest_ctx->mtime = pack_dos_datetime(fs::last_write_time(entry, ec));
-		//guest_ctx->btime = fs::exists(entry.path(), ec) && !ec ? pack_dos_datetime(fs::last_write_time(entry, ec)) : 0; // Placeholder for btime
-		//guest_ctx->atime = guest_ctx->mtime; // Placeholder for atime
+		guest_ctx->mtime = pack_dos_datetime(fs::last_write_time(entry, ec));
+		guest_ctx->btime = fs::exists(entry.path(), ec) && !ec ? pack_dos_datetime(fs::last_write_time(entry, ec)) : 0; // Placeholder for btime
+		guest_ctx->atime = guest_ctx->mtime;
 
-		guest_ctx->atime = guest_ctx->mtime = guest_ctx->btime = 0;// pack_dos_datetime(fs::last_write_time(entry, ec));
+		//guest_ctx->atime = guest_ctx->mtime = guest_ctx->btime = 0;// pack_dos_datetime(fs::last_write_time(entry, ec));
 
 		guest_ctx->attrib = fat_attribs;
 		guest_ctx->attrib_mask = (unsigned char)internal_ctx.attrib_mask;
@@ -1659,10 +1673,10 @@ uint32_t _wremove(SystemServiceArguments* args)
 	}
 
 	// 2. Map the wide-character virtual path to a sandboxed host system path.
-	std::string hostPath = MapVMPathToHostW(wVmPath);
+	std::wstring hostPath = MapVMPathToHostW(wVmPath);
 
 	// For logging purposes, convert the wide string to a printable UTF-8 string.
-	printf("    +_wremove Mapped host path: '%s'\n", hostPath.c_str());
+	wprintf(L"    +_wremove Mapped host path: '%s'\n", hostPath.c_str());
 
 	try {
 		std::error_code ec;
@@ -1727,9 +1741,10 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 		return 0; // Invalid handle
 	}
 	if (g_vdev_table[handle].ends_with("BAT")) {
-		auto voltage = (float*)out;
+		auto voltage = (uint32_t*)out;
 		// TODO: Idk why this works...
-		voltage[0] = voltage[1] = voltage[2] = voltage[3] = 4;
+		voltage[0] = voltage[1] = voltage[2] = voltage[3] = 0;
+		voltage[2] = 2'0000'0;
 		return 1;
 	}
 	if (g_vdev_table[handle].ends_with("ARCH")) {
@@ -1772,7 +1787,7 @@ uint32_t InterruptDone(SystemServiceArguments* args) {
 
 uint32_t BatteryLowCheck(SystemServiceArguments* args) {
 	//sThreadHandler->CurrentThreadSleep(1000);
-	sThreadHandler->CurrentThreadYield();
+	//sThreadHandler->CurrentThreadYield();
 	return 0; // Battery OK!
 }
 
@@ -1780,6 +1795,9 @@ int _ui_thread_id = 0;
 
 std::mutex lock;
 std::vector<UIMultipressEvent> events;
+static constexpr size_t MAX_MULTIPRESS_EVENTS = 8;
+UIMultipressEvent touch_states[MAX_MULTIPRESS_EVENTS];
+
 // Not a system service
 void EnqueueEvent(UIMultipressEvent uime) {
 	std::lock_guard lg(lock);
@@ -1788,8 +1806,19 @@ void EnqueueEvent(UIMultipressEvent uime) {
 	sThreadHandler->WakeThread(_ui_thread_id);
 }
 std::atomic<int> special_event = 0;
+std::atomic<bool> touch = false;
 void EnqueueSpecial(int val) {
 	special_event.store(val);
+}
+void TouchUpdate(int x, int y, int finger_id, ui_event_type_e status)
+{
+	if (finger_id < 0 || finger_id >= MAX_MULTIPRESS_EVENTS) return;
+	touch_states[finger_id].finger_id = finger_id;
+	touch_states[finger_id].touch_x = x;
+	touch_states[finger_id].touch_y = y;
+	touch_states[finger_id].status = status;
+	touch.store(true);
+	sThreadHandler->WakeThread(_ui_thread_id);
 }
 uint32_t GetEvent(SystemServiceArguments* args)
 {
@@ -1798,7 +1827,6 @@ uint32_t GetEvent(SystemServiceArguments* args)
 	event = {}; // 初始化事件结构体
 	int k;
 	if (k = special_event.load()) {
-		event.available_multipress_events = 0;
 		special_event.store(0);
 		event.event_type = (ui_event_type_e)k;
 		return 0;
@@ -1807,18 +1835,18 @@ uint32_t GetEvent(SystemServiceArguments* args)
 
 	// 1. 设置默认事件类型
 	event.event_type = UI_EVENT_TYPE_TOUCH;
-	event.available_multipress_events = 0;
-
-	if (!events.empty()) {
-		// 2. 检查队列中是否存在任何 KEY 或 KEY_UP 事件
-		bool hasKeyEvent = std::any_of(events.begin(), events.end(), [](const auto& ev) {
-			return ev.type == UI_EVENT_TYPE_KEY || ev.type == UI_EVENT_TYPE_KEY_UP;
-			});
-
-		// 3. 如果存在按键事件，则更新主事件类型
-		if (hasKeyEvent) {
-			event.event_type = UI_EVENT_TYPE_KEY_BATCH;
+	if (touch.load()) {
+		for (size_t i = 0; i < MAX_MULTIPRESS_EVENTS; ++i) {
+			if (touch_states[i].status != UI_EVENT_TYPE_INVALID) {
+				event.multipress_events[event.available_multipress_events++] = touch_states[i];
+			}
 		}
+		event.available_multipress_events = 8;
+		touch.store(false);
+		return 0;
+	}
+	if (!events.empty()) {
+		event.event_type = UI_EVENT_TYPE_KEY_BATCH;
 
 		// 防止溢出的安全检查
 		if (events.size() > 8) { // 假设 multipress_events 的最大容量是 8
@@ -1970,10 +1998,10 @@ uint32_t _afnmerge(SystemServiceArguments* args)
 	const char* drive = __GET(const char*, args->r1);
 	const char* dir = __GET(const char*, args->r2);
 	const char* name = __GET(const char*, args->r3);
-	const char* ext = __GET(char*, args->sp + 0x8);
+	const char* ext = __GET(char*, *__GET(VirtPtr*, args->sp + 0x8));
 
-	printf("_afmerge hack!\n");
-	ext = ".dat";
+	//printf("_afmerge hack!\n");
+	//ext = ".dat";
 
 	if (!outPath) return (uint32_t)-1;
 
@@ -2103,7 +2131,7 @@ uint32_t _FileSize(SystemServiceArguments* args) {
 		errno = EINVAL;
 		return (size_t)-1;
 	}
-	printf("_FileSize: %p, result: %zu\n", (void*)args->r0, stream->size);
+	// printf("_FileSize: %p, result: %zu\n", (void*)args->r0, stream->size);
 	return stream->size;
 }
 
@@ -2115,10 +2143,10 @@ uint32_t _OpenSubFile(SystemServiceArguments* args) {
 		errno = EINVAL;
 		return NULL;
 	}
-	printf("opensubf: parent:%p\n", args->r0);
+	// printf("opensubf: parent:%p\n", args->r0);
 
 	if (base + max_size > parent->size) {
-		fprintf(stderr, "Error: Sub-file extends beyond parent's bounds.\n");
+		// fprintf(stderr, "Error: Sub-file extends beyond parent's bounds.\n");
 		errno = EINVAL;
 		return NULL;
 	}
@@ -2141,7 +2169,7 @@ uint32_t _OpenSubFile(SystemServiceArguments* args) {
 	fd->unk_0x18 = 0;
 	fd->unk_0x1c = 0;
 
-	printf("OpenSubFile: parent:%p, base:%zu, size:%zu, subf:%p\n", (void*)fd->parent_fd, base, max_size, (void*)fd);
+	// printf("OpenSubFile: parent:%p, base:%zu, size:%zu, subf:%p\n", (void*)fd->parent_fd, base, max_size, (void*)fd);
 	return vp;
 }
 
@@ -2150,7 +2178,7 @@ uint32_t _CloseFile(SystemServiceArguments* args) {
 
 	if (!stream) return 0;
 
-	printf("_CloseFile: %p\n", (void*)args->r0);
+	// printf("_CloseFile: %p\n", (void*)args->r0);
 
 	if (!stream->parent_fd) {
 		_fclose_host(stream->cart);
@@ -2227,6 +2255,6 @@ uint32_t _ReadFile(SystemServiceArguments* args) {
 uint32_t FSGetDiskRoomState(SystemServiceArguments* args) {
 	DUMPARGS;
 	auto dat = __GET(uint32_t*, args->r1 + 52);
-	dat[0] = 0x114514;
+	dat[0] = 450 * 1024 * 1024;
 	return 0;
 }
