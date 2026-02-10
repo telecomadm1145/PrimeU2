@@ -1,8 +1,8 @@
 # PrimU2
 
-**PrimU2** is a prototype High-Level Emulator (HLE) for the **HP Prime** calculator (V1 / V2 / G1) built on top of the [Unicorn Engine](https://github.com/unicorn-engine/unicorn).
+**PrimU2** is a High-Level Emulator (HLE) for the **HP Prime** calculator (V1 / V2 / G1) built on top of the [Unicorn Engine](https://github.com/unicorn-engine/unicorn).
 
-PrimU2 currently targets the HP Prime firmware **20130808**, because that version does not require `armfir.dat` to be loaded into RAM.
+PrimU2 currently targets the HP Prime firmware **20250915**, newer or older versions are not officially supported.
 
 ---
 
@@ -14,17 +14,20 @@ PrimU2 currently targets the HP Prime firmware **20130808**, because that versio
 * PE Loader
 * ELF Loader
 * Power Off
-* UI Events (buggy touch support, full keypad support)
+* Touch&Key
+* `_OpenFile` and other loader API
 * And many other things...
-
+  
 ## What doesn't work
 
-* GDI-style drawing API
-* Hardware interrupts
-* `_OpenFile` and other loader API for reading `armfir.dat`
-* Firmware randomly crashes occasionally
-* Cross-platform support
-
+* GDI API
+* Interrupt API
+* Battery API
+* External Debugger
+* Cross-platform
+* USB
+* PC Connectivity Kit
+  
 ---
 
 ## Compiling
@@ -38,16 +41,12 @@ Visual Studio 2022 or later is required.
 
 ## Running
 
-You must first extract `armfir.elf` from the **201308080** firmware update for the calculator.
+You must first extract "Disk A" from the **20250915** firmware update for the calculator.
 
-> The `armfir.elf` file is contained inside the firmware update: the APPDISK.DAT file contains a FAT-16 filesystem starting at an 8 KB offset. Mount that filesystem (or extract it with a suitable tool) to obtain `armfir.elf`. See the HP Prime firmware wiki for more details:
+> The "Disk A" is contained inside the firmware update: the APPDISK.DAT file contains a FAT-16 filesystem starting at an 8 KB offset. Mount that filesystem (or extract it with a suitable tool(7z)) to obtain "Disk A". See the HP Prime firmware wiki for more details:
 > [https://tiplanet.org/hpwiki/index.php?title=HP\_Prime/Firmware\_files](https://tiplanet.org/hpwiki/index.php?title=HP_Prime/Firmware_files)
 
-Once you have `armfir.elf`, run PrimU with:
-
-```bash
-PrimU.exe [path/to/armfir.elf]
-```
+Extract its contents to `.\prime_data\A`, and run `PrimU.exe`.
 
 ---
 
