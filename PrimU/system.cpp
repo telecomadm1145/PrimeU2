@@ -231,7 +231,7 @@ uint32_t __afopen(SystemServiceArguments* args)
 	std::wstring hostPath = utf8_to_wstr(MapVMPathToHost(vmname));
 	std::wstring mode = vmflags ? utf8_to_wstr(vmflags) : std::wstring(L"rb");
 
-	wprintf(L"    +VM name: %s\n    +flags: %s\n    +Mapped host path: %s\n",
+	printf("    +VM name: %s\n    +flags: %s\n    +Mapped host path: %ls\n",
 		vmname, vmflags ? vmflags : "(null)", hostPath.c_str());
 
 	// 如果是写模式，确保目录存在
@@ -250,7 +250,7 @@ uint32_t __afopen(SystemServiceArguments* args)
 	//}
 
 	if (!f) {
-		printf("    _OpenFile: fopen failed for %s\n", hostPath.c_str());
+		wprintf(L"    _OpenFile: fopen failed for %s\n", hostPath.c_str());
 		return 0;
 	}
 
@@ -1067,7 +1067,7 @@ uint32_t _fwrite(SystemServiceArguments* args)
 	FILE* f = it->second.fp;
 	if (!f) return 0;
 
-	printf("    +_fwrite path: %s, size: %u\n", it->second.hostPath.c_str(), size);
+	printf("    +_fwrite path: %ls, size: %u\n", it->second.hostPath.c_str(), size);
 
 	void* src = __GET(void*, srcVPtr);
 	if (!src) return 0;
@@ -1300,7 +1300,7 @@ static bool wildcard_match(const char* pattern, const char* text) {
 		// If text is exhausted but pattern is not, no match
 		if (!*text) return false;
 		// Match '?' with any char, or literal chars (case-insensitively)
-		if (*pattern != '?' && std::tolower((unsigned char)*pattern) != std::tolower((unsigned char)*text)) {
+		if (*pattern != '?' && std::tolower(*pattern) != std::tolower(*text)) {
 			return false;
 		}
 		pattern++;
@@ -1395,10 +1395,10 @@ static uint8_t get_fat_attributes(const fs::directory_entry& entry) {
 		attribs |= AM_RDO;
 	}
 
-	// Emulate hidden files for names starting with a dot (common on Unix)
-	if (!entry.path().filename().string().empty() && entry.path().filename().string()[0] == '.') {
-		attribs |= AM_HID;
-	}
+	//// Emulate hidden files for names starting with a dot (common on Unix)
+	//if (!entry.path().filename().string().empty() && entry.path().filename().string()[0] == '.') {
+	//	attribs |= AM_HID;
+	//}
 
 	return attribs;
 }
@@ -1492,7 +1492,7 @@ short find_next_internal(VirtPtr ctx_vptr) {
 	// Loop through directory to find a matching entry
 	while (internal_ctx.iterator != internal_ctx.end_iterator) {
 		const auto& entry = *internal_ctx.iterator;
-		std::string filename_u8 = entry.path().filename().string();
+		std::string filename_u8 = wstr_to_utf8(entry.path().filename().wstring());
 
 		// Filter by filename pattern
 		if (!wildcard_match(internal_ctx.pattern.c_str(), filename_u8.c_str())) {

@@ -158,11 +158,12 @@ static void PrintStackTrace(uc_engine* uc) {
 void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
 void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
+	static auto epoch = std::chrono::high_resolution_clock::now();
 	static auto lastUpdate = std::chrono::high_resolution_clock::now();
 	static auto last_int = std::chrono::high_resolution_clock::now();
 
 	auto now = std::chrono::high_resolution_clock::now();
-	*__GET(uint32_t*, 0x51000040) = now.time_since_epoch().count() / 1000; // Update system time for the guest (in milliseconds)
+	*__GET(uint32_t*, 0x51000040) = std::chrono::duration_cast<std::chrono::microseconds>(now - epoch).count(); // Update system time for the guest (in milliseconds)
 	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
 	std::chrono::milliseconds elapsed_2 = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_int);
 	using std::chrono_literals::operator""ms;
@@ -221,20 +222,21 @@ bool Executor::Initialize(Executable* exec)
 
 uc_hook m_page_fault;
 uc_hook m_tmp;
+uint64_t pc_cache;
 void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t value, void* user_data) {
-
+	//if (address < 0x10)
+	//	return;
 	uint32_t r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, sp, pc, lr;
 	void* args[16] = { &r0, &r1, &r2, &r3, &r4, &r5, &r6, &r7, &r8, &r9, &r10, &r11, &r12, &sp, &lr, &pc };
 	int regs[16] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
+	pc_cache = pc;
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
-	if (address < 0x10)
-		return;
-	if (pc == 0x306A5F3C || pc == 0x306A5ED4)
-	{
-		uc_reg_write(uc, UC_ARM_REG_PC, &lr);
-		return;
-	}
+	//if (pc == 0x306A5F3C || pc == 0x30601A98) // Special:
+	//{
+	//	uc_reg_write(uc, UC_ARM_REG_PC, &lr);
+	//	return;
+	//}
 	if (type == UC_MEM_FETCH_UNMAPPED || type == UC_MEM_FETCH_PROT) {
 		if (pc < 0x1000) {
 			uc_reg_write(uc, UC_ARM_REG_PC, &lr);
@@ -336,6 +338,7 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 		printf("    Failed to initialize Capstone disassembler.\n");
 	}
 	PrintStackTrace(uc);
+	__debugbreak();
 }
 // BLOCK - 1 - end
 bool Executor::Cleanup()
@@ -351,6 +354,7 @@ bool Executor::Cleanup()
 bool Executor::InitInterrupts()
 {
 	sMemoryManager->StaticAlloc(RTC_REGISTER, 0x100);
+	sMemoryManager->StaticAlloc(0, 0x10);
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_INVALID, pf, 0, 1, 0));
@@ -385,11 +389,11 @@ void Executor::Execute()
 
 		if (m_err != UC_ERR_OK) {
 			uint32_t cpsr = 0;
-			uint32_t pc = 0;
+			uint32_t pc = pc_cache;
 			if (uc_reg_read(m_uc, UC_ARM_REG_CPSR, &cpsr) != UC_ERR_OK) {
 				cpsr = 0; // 无法读取时保守处理
 			}
-			uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
+			// uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
 			// 判断是否为 Thumb：PC 低位为 1 或 CPSR.T 位被置位
 			bool is_thumb = ((pc & 1) != 0) || ((cpsr & (1u << 5)) != 0);
 

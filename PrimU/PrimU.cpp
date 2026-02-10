@@ -30,7 +30,6 @@ int main(int argc, char** argv)
 
     sExecutor->Execute();
     sExecutor->Cleanup();
-    getchar();
 
     return 0;
 }
