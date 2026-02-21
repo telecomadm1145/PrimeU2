@@ -1,84 +1,90 @@
-#ifndef THREAD_HANDLER_H
+ï»¿#ifndef THREAD_HANDLER_H
 #define THREAD_HANDLER_H
 
 #include "common.h"
 #include <queue>
+#include <thread>
 
 class Thread;
 
-struct CriticalSection
-{
-	uint32_t isLocked = 0;
-	int ownerHandle = -1;
-	int recursionCount = 0;
-	std::deque<Thread*> waiters;
-	int contentionCount = 0;
+struct CriticalSection {
+  uint32_t isLocked = 0;
+  int ownerHandle = -1;
+  int recursionCount = 0;
+  std::deque<Thread *> waiters;
+  int contentionCount = 0;
 };
 
-
-// Ç°Ìá£ºThread ÀàÒÑ¾­´æÔÚ£¬ÕâÀïÖ»Õ¹Ê¾ĞèÒªĞÂÔö/ĞŞ¸ÄµÄ³ÉÔ±ºÍ·½·¨ÊµÏÖ
+// å‰æï¼šThread ç±»å·²ç»å­˜åœ¨ï¼Œè¿™é‡Œåªå±•ç¤ºéœ€è¦æ–°å¢/ä¿®æ”¹çš„æˆå‘˜å’Œæ–¹æ³•å®ç°
 class Event; // forward
 
-// Event ±¾Ìå ¡ª¡ª µ¥ºË VM °æ±¾
+// Event æœ¬ä½“ â€”â€” å•æ ¸ VM ç‰ˆæœ¬
 struct Event {
-	bool manualReset;            // true = manual reset, false = auto reset
-	bool signaled;               // µ±Ç°ÊÇ·ñÎªĞÅºÅ×´Ì¬
-	std::deque<Thread*> waiters; // FIFO µÈ´ı¶ÓÁĞ£¨Ïß³ÌÖ¸Õë£©
-	int contentionCount = 0;     // µÈ´ıÕß¼ÆÊı£¨µÈÓÚ waiters.size()£©
+  bool manualReset;             // true = manual reset, false = auto reset
+  bool signaled;                // å½“å‰æ˜¯å¦ä¸ºä¿¡å·çŠ¶æ€
+  std::deque<Thread *> waiters; // FIFO ç­‰å¾…é˜Ÿåˆ—ï¼ˆçº¿ç¨‹æŒ‡é’ˆï¼‰
+  int contentionCount = 0;      // ç­‰å¾…è€…è®¡æ•°ï¼ˆç­‰äº waiters.size()ï¼‰
 
-	Event(bool manual, bool initial)
-		: manualReset(manual), signaled(initial), waiters(), contentionCount(0) {
-	}
+  Event(bool manual, bool initial)
+      : manualReset(manual), signaled(initial), waiters(), contentionCount(0) {}
 };
 
-class StateManager
-{
+// Semaphore â€”â€” è®¡æ•°ä¿¡å·é‡ï¼ŒWin32 é£æ ¼
+struct Semaphore {
+  int count;                    // å½“å‰è®¡æ•°
+  int maxCount;                 // æœ€å¤§è®¡æ•°
+  std::deque<Thread *> waiters; // FIFO ç­‰å¾…é˜Ÿåˆ—
+  int contentionCount = 0;
+
+  Semaphore(int initial, int max)
+      : count(initial), maxCount(max), waiters(), contentionCount(0) {}
+};
+
+class StateManager {
 public:
+  static StateManager *GetInstance() {
+    return !_instance ? _instance = new StateManager : _instance;
+  }
 
-	static StateManager* GetInstance() { return !_instance ? _instance = new StateManager : _instance; }
+  int NewThread(VirtPtr start, uint32_t arg = 0,
+                uint8_t priority = THREAD_PRIORITY_NORMAL,
+                size_t stackSize = 0x2000);
+  void SwitchThread();
+  void LoadCurrentThreadState();
+  void SaveCurrentThreadState();
 
-	int NewThread(VirtPtr start, uint32_t arg = 0, uint8_t priority = THREAD_PRIORITY_NORMAL, size_t stackSize = 0x2000);
-	void SwitchThread();
-	void LoadCurrentThreadState();
-	void SaveCurrentThreadState();
+  uint32_t GetCurrentThreadQuantum() const;
+  uint32_t GetCurrentThreadPC();
+  bool CanCurrentThreadRun();
+  int GetCurrentThreadId() const;
 
-	uint32_t GetCurrentThreadQuantum() const;
-	uint32_t GetCurrentThreadPC();
-	bool CanCurrentThreadRun();
-	int GetCurrentThreadId() const;
+  int SetThreadPriority(int threadId, uint8_t priority);
 
-	int SetThreadPriority(int threadId, uint8_t priority);
+  void WakeThread(int threadId);
+  void CurrentThreadYield() { yielding = true; }
 
-	void WakeThread(int threadId);
-	void CurrentThreadYield() {
-		yielding = true;
-	}
+  void InitCriticalSection(CriticalSection *criticalSection);
+  void CurrentThreadEnterCriticalSection(CriticalSection *criticalSection);
+  void CurrentThreadExitCriticalSection(CriticalSection *criticalSection);
+  void CurrentThreadSleep(uint32_t time);
+  Thread &GetCurrentThread() { return *_currentThread; }
 
-	void InitCriticalSection(CriticalSection* criticalSection);
-	void CurrentThreadEnterCriticalSection(CriticalSection* criticalSection);
-	void CurrentThreadExitCriticalSection(CriticalSection* criticalSection);
-	void CurrentThreadSleep(uint32_t time);
-	Thread& GetCurrentThread() {
-		return *_currentThread;
-	}
+  bool interrupting = false;
+  bool pausing = false;
+  VirtPtr interruptPC = 0;
 
-	bool interrupting = false;
-	bool pausing = false;
-	VirtPtr interruptPC = 0;
-
-	bool yielding = false;
+  bool yielding = false;
 
 private:
-	StateManager() {}
-	~StateManager() {}
-	StateManager(StateManager const&) = delete;
-	void operator=(StateManager const&) = delete;
-	static StateManager* _instance;
+  StateManager() {}
+  ~StateManager() {}
+  StateManager(StateManager const &) = delete;
+  void operator=(StateManager const &) = delete;
+  static StateManager *_instance;
 
-	Thread* _currentThread = nullptr;
+  Thread *_currentThread = nullptr;
 };
 
 #define sThreadHandler StateManager::GetInstance()
-
 
 #endif

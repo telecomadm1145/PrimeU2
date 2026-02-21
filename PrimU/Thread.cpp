@@ -1,371 +1,490 @@
-#include "Thread.h"
+ï»¿#include "Thread.h"
 #include "ThreadHandler.h"
 
-int Thread::GenerateUniqueId()
-{
-    static int currentInt = -1;
-    currentInt++;
-    return currentInt;
+// ================================
+// ç§»é™¤æŸçº¿ç¨‹åœ¨äº‹ä»¶ waiters é˜Ÿåˆ—ä¸­çš„è¾…åŠ©å‡½æ•°ï¼ˆå¯æ”¾åœ¨ cpp æ–‡ä»¶å†…ï¼Œéæˆå‘˜ï¼‰
+// ================================
+static void remove_from_event_waiters(Event *ev, Thread *t) {
+  if (ev == nullptr)
+    return;
+  for (auto it = ev->waiters.begin(); it != ev->waiters.end(); ++it) {
+    if (*it == t) {
+      ev->waiters.erase(it);
+      if (ev->contentionCount > 0)
+        --ev->contentionCount;
+      break;
+    }
+  }
 }
 
-void Thread::LoadState()
-{
-    _state->LoadState();
+static void remove_from_semaphore_waiters(Semaphore *sem, Thread *t) {
+  if (sem == nullptr)
+    return;
+  for (auto it = sem->waiters.begin(); it != sem->waiters.end(); ++it) {
+    if (*it == t) {
+      sem->waiters.erase(it);
+      if (sem->contentionCount > 0)
+        --sem->contentionCount;
+      break;
+    }
+  }
+}
+int Thread::GenerateUniqueId() {
+  static int currentInt = -1;
+  currentInt++;
+  return currentInt;
+}
+
+void Thread::LoadState() { _state->LoadState(); }
+
+/*
+ * Do not call function outside of a callback!!
+ *   as it may save an errant PC value because
+ *   of a UC engine bug
+ */
+void Thread::SaveState() { _state->SaveState(); }
+
+void ThreadState::LoadState() {
+  if (!_isNewThread) {
+    uc_context_restore(sExecutor->GetUcInstance(), _state);
+    return;
+  }
+  uc_reg_write_batch(sExecutor->GetUcInstance(), reinterpret_cast<int *>(_regs),
+                     reinterpret_cast<void **>(_args), 16);
 }
 
 /*
-* Do not call function outside of a callback!!
-*   as it may save an errant PC value because
-*   of a UC engine bug
-*/
-void Thread::SaveState()
-{
-    _state->SaveState();
+ * Do not call function outside of a callback!!
+ *   as it may save an errant PC value because
+ *   of a UC engine bug
+ */
+void ThreadState::SaveState() {
+  uc_context_save(sExecutor->GetUcInstance(), _state);
+  uc_reg_read_batch(sExecutor->GetUcInstance(), reinterpret_cast<int *>(_regs),
+                    reinterpret_cast<void **>(_args), 16);
+
+  size_t thumb;
+  uc_query(sExecutor->GetUcInstance(), UC_QUERY_MODE, &thumb);
+  if (thumb)
+    __debugbreak();
+  _pc += (thumb & UC_MODE_THUMB) ? 1 : 0;
+
+  if (_isNewThread)
+    _isNewThread = false;
 }
 
-void ThreadState::LoadState()
-{
-    if (!_isNewThread) {
-        uc_context_restore(sExecutor->GetUcInstance(), _state);
-        return;
-    }
-
-    uc_reg_write_batch(sExecutor->GetUcInstance(), reinterpret_cast<int*>(_regs), reinterpret_cast<void**>(_args), 16);
+uint32_t Thread::GetTimeQuantum() {
+  if (this->_id == 0)
+    return 4000;
+  return 400 - _priority;
 }
 
-/*
-* Do not call function outside of a callback!!
-*   as it may save an errant PC value because
-*   of a UC engine bug
-*/
-void ThreadState::SaveState()
-{
-    uc_context_save(sExecutor->GetUcInstance(), _state);
-    uc_reg_read_batch(sExecutor->GetUcInstance(), reinterpret_cast<int*>(_regs), reinterpret_cast<void**>(_args), 16);
+// å®ç° â€”â€” å•æ ¸ã€FIFO ç­‰å¾…é˜Ÿåˆ—ï¼Œå¹¶åœ¨é‡Šæ”¾æ—¶æŠŠæ‰€æœ‰æƒç›´æ¥ transfer ç»™é˜Ÿé¦–
+void Thread::EnterCriticalSection(CriticalSection *criticalSection) {
+  if (criticalSection == nullptr)
+    return;
 
-    size_t thumb;
-    uc_query(sExecutor->GetUcInstance(), UC_QUERY_MODE, &thumb);
-    if (thumb) __debugbreak();
-    _pc += (thumb & UC_MODE_THUMB) ? 1 : 0;
+  int me = GetId();
 
-    if (_isNewThread)
-        _isNewThread = false;
+  // å¦‚æœå·²ç»æ˜¯ ownerï¼šé€’å½’é‡å…¥
+  if (criticalSection->ownerHandle == me) {
+    ++criticalSection->recursionCount;
+    _ownedCriticalSections[criticalSection] += 1;
+    return;
+  }
+
+  // å¦‚æœç©ºé—²ä¸”æ²¡æœ‰ç­‰å¾…è€…ï¼ˆå¿«é€Ÿè·¯å¾„ï¼‰ï¼Œç›´æ¥è·å¾—
+  if (criticalSection->ownerHandle == -1 && criticalSection->waiters.empty()) {
+    criticalSection->ownerHandle = me;
+    criticalSection->recursionCount = 1;
+    _ownedCriticalSections[criticalSection] = 1;
+    return;
+  }
+
+  // å¦‚æœå·²ç»åœ¨ç­‰å¾…è¿™ä¸ª CSï¼ˆé¿å…é‡å¤å…¥é˜Ÿï¼‰ï¼Œç›´æ¥è¿”å›ä¿æŒç­‰å¾…çŠ¶æ€
+  if (_requested == criticalSection) {
+    return;
+  }
+
+  // å¦åˆ™ï¼šæœ‰äººæŒæœ‰æˆ–å·²æœ‰ç­‰å¾…è€…ï¼ŒæŒ‰ FIFO å…¥é˜Ÿå¹¶æ ‡è®°ä¸ºè¯·æ±‚
+  criticalSection->waiters.push_back(this);
+  ++criticalSection->contentionCount;
+  _requested = criticalSection;
+
+  // æ³¨æ„ï¼šä¿æŒéé˜»å¡è¡Œä¸ºâ€”â€”ç”±è°ƒåº¦å™¨å†³å®šä½•æ—¶å†æ¬¡è¿è¡Œè¯¥çº¿ç¨‹ï¼ˆCanRunï¼‰
 }
 
+void Thread::LeaveCriticalSection(CriticalSection *criticalSection) {
+  if (criticalSection == nullptr)
+    return;
 
-uint32_t Thread::GetTimeQuantum()
-{
-    if (this->_id == 0)
-        return 4000;
-    return 400 - _priority;
-}
-
-
-// ÊµÏÖ ¡ª¡ª µ¥ºË¡¢FIFO µÈ´ı¶ÓÁĞ£¬²¢ÔÚÊÍ·ÅÊ±°ÑËùÓĞÈ¨Ö±½Ó transfer ¸ø¶ÓÊ×
-void Thread::EnterCriticalSection(CriticalSection* criticalSection)
-{
-    if (criticalSection == nullptr)
-        return;
-
-    int me = GetId();
-
-    // Èç¹ûÒÑ¾­ÊÇ owner£ºµİ¹éÖØÈë
-    if (criticalSection->ownerHandle == me) {
-        ++criticalSection->recursionCount;
-        _ownedCriticalSections[criticalSection] += 1;
-        return;
-    }
-
-    // Èç¹û¿ÕÏĞÇÒÃ»ÓĞµÈ´ıÕß£¨¿ìËÙÂ·¾¶£©£¬Ö±½Ó»ñµÃ
-    if (criticalSection->ownerHandle == -1 && criticalSection->waiters.empty()) {
-        criticalSection->ownerHandle = me;
-        criticalSection->recursionCount = 1;
-        _ownedCriticalSections[criticalSection] = 1;
-        return;
-    }
-
-    // Èç¹ûÒÑ¾­ÔÚµÈ´ıÕâ¸ö CS£¨±ÜÃâÖØ¸´Èë¶Ó£©£¬Ö±½Ó·µ»Ø±£³ÖµÈ´ı×´Ì¬
-    if (_requested == criticalSection) {
-        return;
-    }
-
-    // ·ñÔò£ºÓĞÈË³ÖÓĞ»òÒÑÓĞµÈ´ıÕß£¬°´ FIFO Èë¶Ó²¢±ê¼ÇÎªÇëÇó
-    criticalSection->waiters.push_back(this);
-    ++criticalSection->contentionCount;
-    _requested = criticalSection;
-
-    // ×¢Òâ£º±£³Ö·Ç×èÈûĞĞÎª¡ª¡ªÓÉµ÷¶ÈÆ÷¾ö¶¨ºÎÊ±ÔÙ´ÎÔËĞĞ¸ÃÏß³Ì£¨CanRun£©
-}
-
-void Thread::LeaveCriticalSection(CriticalSection* criticalSection)
-{
-    if (criticalSection == nullptr)
-        return;
-
-    auto it = _ownedCriticalSections.find(criticalSection);
-    if (it == _ownedCriticalSections.end()) {
+  auto it = _ownedCriticalSections.find(criticalSection);
+  if (it == _ownedCriticalSections.end()) {
 #ifdef _DEBUG
-        // ·Ç³ÖÓĞÕßÊÍ·Å ¡ª¡ª ¿ÉÄÜÊÇ bug£¬¶Ïµã»òºöÂÔ
-        __debugbreak();
+    // éæŒæœ‰è€…é‡Šæ”¾ â€”â€” å¯èƒ½æ˜¯ bugï¼Œæ–­ç‚¹æˆ–å¿½ç•¥
+    __debugbreak();
 #endif
-        return;
-    }
+    return;
+  }
 
-    // Ïß³Ì¶Ë¼ÇÂ¼¼õÉÙ
-    int& threadCount = it->second;
-    --threadCount;
+  // çº¿ç¨‹ç«¯è®°å½•å‡å°‘
+  int &threadCount = it->second;
+  --threadCount;
 
-    // Í¬²½¼õÉÙÁÙ½çÇøµÄµİ¹é¼ÆÊı£¨Ó¦ÓëÏß³Ì¼ÇÂ¼Ò»ÖÂ£©
-    if (criticalSection->recursionCount > 0)
-        --criticalSection->recursionCount;
-    else {
+  // åŒæ­¥å‡å°‘ä¸´ç•ŒåŒºçš„é€’å½’è®¡æ•°ï¼ˆåº”ä¸çº¿ç¨‹è®°å½•ä¸€è‡´ï¼‰
+  if (criticalSection->recursionCount > 0)
+    --criticalSection->recursionCount;
+  else {
 #ifdef _DEBUG
-        // ²»Ó¦·¢Éú
-        __debugbreak();
+    // ä¸åº”å‘ç”Ÿ
+    __debugbreak();
 #endif
+  }
+
+  // å¦‚æœçº¿ç¨‹å¯¹è¯¥ CS çš„è®¡æ•°å½’é›¶ï¼Œåˆ™é‡Šæ”¾ ownership æˆ–è½¬äº¤ç»™é˜Ÿé¦–ç­‰å¾…è€…
+  if (threadCount == 0) {
+    _ownedCriticalSections.erase(it);
+
+    // å¦‚æœæœ‰äººåœ¨ç­‰å¾…ï¼ˆFIFOï¼‰ï¼ŒæŠŠæ‰€æœ‰æƒç›´æ¥è½¬ç»™é˜Ÿé¦–çº¿ç¨‹
+    if (!criticalSection->waiters.empty()) {
+      Thread *next = criticalSection->waiters.front();
+      criticalSection->waiters.pop_front();
+      if (criticalSection->contentionCount > 0)
+        --criticalSection->contentionCount;
+
+      // èµ‹äºˆ next æ‰€æœ‰æƒ
+      criticalSection->ownerHandle = next->GetId();
+      criticalSection->recursionCount = 1;
+
+      // åœ¨å•ç±»èŒƒå›´å†…ï¼Œå…è®¸ç›´æ¥è®¿é—®å¦ä¸€ä¸ªå®ä¾‹çš„ç§æœ‰å­—æ®µï¼ˆC++ å…è®¸ï¼‰
+      // æ¸…ç† next çš„è¯·æ±‚æ ‡å¿—ï¼Œå¹¶åœ¨ next çš„æŒæœ‰è¡¨ä¸­è®°å½•å®ƒå·²è·å¾—è¯¥ CS
+      next->_requested = nullptr;
+      next->_ownedCriticalSections[criticalSection] = 1;
+    } else {
+      // æ— ç­‰å¾…è€…ï¼Œé‡Šæ”¾ä¸´ç•ŒåŒº
+      criticalSection->ownerHandle = -1;
+      criticalSection->recursionCount = 0;
     }
-
-    // Èç¹ûÏß³Ì¶Ô¸Ã CS µÄ¼ÆÊı¹éÁã£¬ÔòÊÍ·Å ownership »ò×ª½»¸ø¶ÓÊ×µÈ´ıÕß
-    if (threadCount == 0) {
-        _ownedCriticalSections.erase(it);
-
-        // Èç¹ûÓĞÈËÔÚµÈ´ı£¨FIFO£©£¬°ÑËùÓĞÈ¨Ö±½Ó×ª¸ø¶ÓÊ×Ïß³Ì
-        if (!criticalSection->waiters.empty()) {
-            Thread* next = criticalSection->waiters.front();
-            criticalSection->waiters.pop_front();
-            if (criticalSection->contentionCount > 0)
-                --criticalSection->contentionCount;
-
-            // ¸³Óè next ËùÓĞÈ¨
-            criticalSection->ownerHandle = next->GetId();
-            criticalSection->recursionCount = 1;
-
-            // ÔÚµ¥Àà·¶Î§ÄÚ£¬ÔÊĞíÖ±½Ó·ÃÎÊÁíÒ»¸öÊµÀıµÄË½ÓĞ×Ö¶Î£¨C++ ÔÊĞí£©
-            // ÇåÀí next µÄÇëÇó±êÖ¾£¬²¢ÔÚ next µÄ³ÖÓĞ±íÖĞ¼ÇÂ¼ËüÒÑ»ñµÃ¸Ã CS
-            next->_requested = nullptr;
-            next->_ownedCriticalSections[criticalSection] = 1;
-        }
-        else {
-            // ÎŞµÈ´ıÕß£¬ÊÍ·ÅÁÙ½çÇø
-            criticalSection->ownerHandle = -1;
-            criticalSection->recursionCount = 0;
-        }
-    }
-    else {
-        // ÈÔÓĞµİ¹éÕ¼ÓÃ£¨Ïß³ÌÈÔ³ÖÓĞ£©£¬²»ÊÍ·Å owner
-    }
+  } else {
+    // ä»æœ‰é€’å½’å ç”¨ï¼ˆçº¿ç¨‹ä»æŒæœ‰ï¼‰ï¼Œä¸é‡Šæ”¾ owner
+  }
 }
-
 
 // ================================
-// Event API ÊµÏÖ
+// Event API å®ç°
 // ================================
 
-Event* Thread::CreateEvent(bool bManualReset, bool bInitialState)
-{
-    // ×¢Òâ£ºµ÷ÓÃ·½¸ºÔğ later delete£¨»òÕßÄã¿ÉÒÔ¸ÄÎªÊ¹ÓÃÖÇÄÜÖ¸Õë²¢ÔÚºÏÊÊÊ±É¾³ı£©
-    return new Event(bManualReset, bInitialState);
+Event *Thread::CreateEvent(bool bManualReset, bool bInitialState) {
+  // æ³¨æ„ï¼šè°ƒç”¨æ–¹è´Ÿè´£ later deleteï¼ˆæˆ–è€…ä½ å¯ä»¥æ”¹ä¸ºä½¿ç”¨æ™ºèƒ½æŒ‡é’ˆå¹¶åœ¨åˆé€‚æ—¶åˆ é™¤ï¼‰
+  return new Event(bManualReset, bInitialState);
 }
 
-void Thread::SetEvent(Event* ev)
-{
-    if (ev == nullptr) return;
+void Thread::SetEvent(Event *ev) {
+  if (ev == nullptr)
+    return;
 
-    // Èç¹ûÊÇ manual reset£º°ÑĞÅºÅÖÃÎª true£¬²¢»½ĞÑËùÓĞµÈ´ıÕß
-    if (ev->manualReset) {
-        ev->signaled = true;
+  // å¦‚æœæ˜¯ manual resetï¼šæŠŠä¿¡å·ç½®ä¸º trueï¼Œå¹¶å”¤é†’æ‰€æœ‰ç­‰å¾…è€…
+  if (ev->manualReset) {
+    ev->signaled = true;
 
-        // »½ĞÑËùÓĞµÈ´ıÕß£¨FIFO Ë³Ğò£¬±éÀúÈ«²¿£©
-        while (!ev->waiters.empty()) {
-            Thread* t = ev->waiters.front();
-            ev->waiters.pop_front();
-            if (ev->contentionCount > 0) --ev->contentionCount;
+    // å”¤é†’æ‰€æœ‰ç­‰å¾…è€…ï¼ˆFIFO é¡ºåºï¼Œéå†å…¨éƒ¨ï¼‰
+    while (!ev->waiters.empty()) {
+      Thread *t = ev->waiters.front();
+      ev->waiters.pop_front();
+      if (ev->contentionCount > 0)
+        --ev->contentionCount;
 
-            // ÇåÀíµÈ´ı×´Ì¬£¬Ê¹Ïß³ÌÔÚÏÂ´Îµ÷¶È¿ÉÔËĞĞ£¨CanRun »á¿´µ½ _waitingEvent == nullptr£©
-            t->_waitingEvent = nullptr;
-            t->_waitingInfinite = false;
-            // t->_waitTimeoutEnd ²»ĞèÒª×¨ÃÅÉèÖÃ£¬ÕâÀïÇåÀíµÈ´ı±êÖ¾¼´¿É
-        }
+      // æ¸…ç†ç­‰å¾…çŠ¶æ€ï¼Œä½¿çº¿ç¨‹åœ¨ä¸‹æ¬¡è°ƒåº¦å¯è¿è¡Œï¼ˆCanRun ä¼šçœ‹åˆ° _waitingEvent ==
+      // nullptrï¼‰
+      t->_waitingEvent = nullptr;
+      t->_waitingInfinite = false;
+      // t->_waitTimeoutEnd ä¸éœ€è¦ä¸“é—¨è®¾ç½®ï¼Œè¿™é‡Œæ¸…ç†ç­‰å¾…æ ‡å¿—å³å¯
     }
-    else {
-        // auto-reset:Èç¹ûÓĞµÈ´ıÕß£¬»½ĞÑ¶ÓÊ×Ò»¸ö²¢°Ñ signaled Çå¿Õ£¨Á¢¼´Ïû·Ñ£©
-        if (!ev->waiters.empty()) {
-            Thread* t = ev->waiters.front();
-            ev->waiters.pop_front();
-            if (ev->contentionCount > 0) --ev->contentionCount;
+  } else {
+    // auto-reset:å¦‚æœæœ‰ç­‰å¾…è€…ï¼Œå”¤é†’é˜Ÿé¦–ä¸€ä¸ªå¹¶æŠŠ signaled æ¸…ç©ºï¼ˆç«‹å³æ¶ˆè´¹ï¼‰
+    if (!ev->waiters.empty()) {
+      Thread *t = ev->waiters.front();
+      ev->waiters.pop_front();
+      if (ev->contentionCount > 0)
+        --ev->contentionCount;
 
-            // transfer ownership: ÇåÀíÏß³ÌµÈ´ı±êÖ¾
-            t->_waitingEvent = nullptr;
-            t->_waitingInfinite = false;
+      // transfer ownership: æ¸…ç†çº¿ç¨‹ç­‰å¾…æ ‡å¿—
+      t->_waitingEvent = nullptr;
+      t->_waitingInfinite = false;
 
-            // Ensure signaled stays false (auto consumed)
-            ev->signaled = false;
-        }
-        else {
-            // Ã»ÓĞµÈ´ıÕß£¬Ôò°ÑÊÂ¼şÖÃÎª signaled£¬ÏÂÒ»´Î WaitForEvent »áÁ¢¼´·µ»Ø²¢Çå³ı£¨auto£©
-            ev->signaled = true;
-        }
+      // Ensure signaled stays false (auto consumed)
+      ev->signaled = false;
+    } else {
+      // æ²¡æœ‰ç­‰å¾…è€…ï¼Œåˆ™æŠŠäº‹ä»¶ç½®ä¸º signaledï¼Œä¸‹ä¸€æ¬¡ WaitForEvent
+      // ä¼šç«‹å³è¿”å›å¹¶æ¸…é™¤ï¼ˆautoï¼‰
+      ev->signaled = true;
     }
+  }
 }
 
-void Thread::ResetEvent(Event* ev)
-{
-    if (ev == nullptr) return;
-    ev->signaled = false;
+void Thread::ResetEvent(Event *ev) {
+  if (ev == nullptr)
+    return;
+  ev->signaled = false;
 }
 
-// WaitForEvent: ·Ç×èÈûµØ°ÑÏß³ÌÖÃÎªµÈ´ı×´Ì¬£¨Óë EnterCriticalSection µÄ·ç¸ñÒ»ÖÂ£©
-// timeoutMillis: ºÁÃë£» <0 ±íÊ¾ÎŞÏŞµÈ´ı£» ==0 ±íÊ¾²»×èÈû£¨Á¢¼´·µ»Ø£©
-// ×¢Òâ£ºº¯Êı·µ»ØºóÏß³Ì´¦ÓÚµÈ´ı×´Ì¬£¨³ı·ÇÊÂ¼şÒÑ±» signaled£©¡ª¡ªÓÉ CanRun ¿ØÖÆºÎÊ±Êµ¼Ê¼ÌĞøÔËĞĞ
-void Thread::WaitForEvent(Event* ev, int timeoutMillis)
-{
-    if (ev == nullptr)
-        return;
+// WaitForEvent: éé˜»å¡åœ°æŠŠçº¿ç¨‹ç½®ä¸ºç­‰å¾…çŠ¶æ€ï¼ˆä¸ EnterCriticalSection
+// çš„é£æ ¼ä¸€è‡´ï¼‰ timeoutMillis: æ¯«ç§’ï¼› <0 è¡¨ç¤ºæ— é™ç­‰å¾…ï¼› ==0
+// è¡¨ç¤ºä¸é˜»å¡ï¼ˆç«‹å³è¿”å›ï¼‰ æ³¨æ„ï¼šå‡½æ•°è¿”å›åçº¿ç¨‹å¤„äºç­‰å¾…çŠ¶æ€ï¼ˆé™¤éäº‹ä»¶å·²è¢«
+// signaledï¼‰â€”â€”ç”± CanRun æ§åˆ¶ä½•æ—¶å®é™…ç»§ç»­è¿è¡Œ
+void Thread::WaitForEvent(Event *ev, int timeoutMillis) {
+  if (ev == nullptr)
+    return;
 
-    // If event is signaled already:
-    if (ev->signaled) {
-        if (!ev->manualReset) {
-            // auto-reset: consume the signal and return immediately
-            ev->signaled = false;
-        }
-        // manual reset: leave signaled true and return immediately
-        return;
+  // If event is signaled already:
+  if (ev->signaled) {
+    if (!ev->manualReset) {
+      // auto-reset: consume the signal and return immediately
+      ev->signaled = false;
     }
+    // manual reset: leave signaled true and return immediately
+    return;
+  }
 
-    // If timeout == 0, do not wait (poll) ¡ª just return (caller gets no event)
-    if (timeoutMillis == 0)
-        return;
+  // If timeout == 0, do not wait (poll) â€” just return (caller gets no event)
+  if (timeoutMillis == 0)
+    return;
 
-    // If already waiting on this event, don't enqueue again
-    if (_waitingEvent == ev)
-        return;
+  // If already waiting on this event, don't enqueue again
+  if (_waitingEvent == ev)
+    return;
 
-    // Enqueue this thread on event waiters
-    ev->waiters.push_back(this);
-    ++ev->contentionCount;
-    _waitingEvent = ev;
-    _waitingInfinite = (timeoutMillis < 0);
+  // Enqueue this thread on event waiters
+  ev->waiters.push_back(this);
+  ++ev->contentionCount;
+  _waitingEvent = ev;
+  _waitingInfinite = (timeoutMillis < 0);
 
-    if (!_waitingInfinite) {
-        _waitTimeoutEnd = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds(timeoutMillis);
-    }
-    else {
-        // set to a sentinel (not strictly necessary)
-        _waitTimeoutEnd = std::chrono::high_resolution_clock::time_point::max();
-    }
+  if (!_waitingInfinite) {
+    _waitTimeoutEnd = std::chrono::high_resolution_clock::now() +
+                      std::chrono::milliseconds(timeoutMillis);
+  } else {
+    // set to a sentinel (not strictly necessary)
+    _waitTimeoutEnd = std::chrono::high_resolution_clock::time_point::max();
+  }
 
-    // Non-blocking: ·µ»ØºóÏß³Ì´¦ÓÚµÈ´ı×´Ì¬£»µ÷¶ÈÆ÷»áÔÚ CanRun() ÖĞ×èÈûËü£¬Ö±µ½ÊÂ¼ş»ò³¬Ê±»ò Resume
+  // Non-blocking: è¿”å›åçº¿ç¨‹å¤„äºç­‰å¾…çŠ¶æ€ï¼›è°ƒåº¦å™¨ä¼šåœ¨ CanRun()
+  // ä¸­é˜»å¡å®ƒï¼Œç›´åˆ°äº‹ä»¶æˆ–è¶…æ—¶æˆ– Resume
+}
+
+// ================================
+// Semaphore API å®ç°
+// ================================
+
+struct Semaphore *Thread::CreateSemaphore(int initialCount, int maxCount) {
+  return new Semaphore(initialCount, maxCount);
+}
+
+void Thread::WaitForSemaphore(Semaphore *sem, int timeoutMillis) {
+  if (sem == nullptr)
+    return;
+
+  // Fast path: if count > 0, decrement and return immediately
+  if (sem->count > 0) {
+    --sem->count;
+    return;
+  }
+
+  // Attempted to wait but count is 0
+  if (timeoutMillis == 0)
+    return; // Return immediately (failed to acquire)
+
+  // Current thread already waiting?
+  if (_waitingSemaphore == sem)
+    return;
+
+  // Enqueue
+  sem->waiters.push_back(this);
+  ++sem->contentionCount;
+  _waitingSemaphore = sem;
+  _waitingInfinite = (timeoutMillis < 0);
+
+  if (!_waitingInfinite) {
+    _waitTimeoutEnd = std::chrono::high_resolution_clock::now() +
+                      std::chrono::milliseconds(timeoutMillis);
+  } else {
+    _waitTimeoutEnd = std::chrono::high_resolution_clock::time_point::max();
+  }
+}
+
+void Thread::ReleaseSemaphore(Semaphore *sem, int releaseCount,
+                              int *previousCount) {
+  if (sem == nullptr)
+    return;
+
+  if (previousCount)
+    *previousCount = sem->count;
+
+  // Validate max count
+  if (sem->count + releaseCount > sem->maxCount) {
+    // Error? For now just clamp or ignore? Win32 ReleaseSemaphore returns
+    // FALSE. We'll just let it fail silently or clamp if we wanted to be safe,
+    // but standard behavior is to fail. Here implementation is void, so we just
+    // return.
+    return;
+    // Actually, let's just increment as much as possible or fail?
+    // Let's assume valid usage for now.
+  }
+
+  sem->count += releaseCount;
+
+  // Wake up waiters if count > 0
+  while (sem->count > 0 && !sem->waiters.empty()) {
+    Thread *t = sem->waiters.front();
+    sem->waiters.pop_front();
+    if (sem->contentionCount > 0)
+      --sem->contentionCount;
+
+    // Decrement count for the thread that just acquired it
+    --sem->count;
+
+    // Clear wait state
+    t->_waitingSemaphore = nullptr;
+    t->_waitingInfinite = false;
+  }
 }
 
 // ================================
 // Suspend / Resume
 // ================================
 
-void Thread::Suspend()
-{
-    ++_suspendCount;
-    _isSuspended = true;
+void Thread::Suspend() {
+  ++_suspendCount;
+  _isSuspended = true;
 }
 
-void Thread::Resume()
-{
-    if (_suspendCount > 0) --_suspendCount;
-    if (_suspendCount == 0) {
-        _isSuspended = false;
-    }
-    // Èç¹ûÏß³ÌÕıÔÚµÈ´ıÊÂ¼ş»òÁÙ½çÇø£¬µ«ÏÖÔÚ±» Resume£¬CanRun() »áÖØĞÂÆÀ¹ÀËüÊÇ·ñ¿ÉÔËĞĞ
+void Thread::Resume() {
+  if (_suspendCount > 0)
+    --_suspendCount;
+  if (_suspendCount == 0) {
+    _isSuspended = false;
+  }
+  // å¦‚æœçº¿ç¨‹æ­£åœ¨ç­‰å¾…äº‹ä»¶æˆ–ä¸´ç•ŒåŒºï¼Œä½†ç°åœ¨è¢« Resumeï¼ŒCanRun()
+  // ä¼šé‡æ–°è¯„ä¼°å®ƒæ˜¯å¦å¯è¿è¡Œ
+}
+
+void Thread::Wake() {
+  // Clear Event wait
+  if (_waitingEvent) {
+    remove_from_event_waiters(_waitingEvent, this);
+    _waitingEvent = nullptr;
+    _waitingInfinite = false;
+  }
+
+  // Clear Semaphore wait
+  if (_waitingSemaphore) {
+    remove_from_semaphore_waiters(_waitingSemaphore, this);
+    _waitingSemaphore = nullptr;
+    _waitingInfinite = false;
+  }
+
+  // Clear critical section wait?
+  // Usually Wake() is used for APCs or termination, but here we use it for
+  // generic wake. We probably shouldn't break CS consistency by forcibly
+  // removing from CS waiters unless we strictly know what we are doing. For
+  // now, only clear explicit sleeps/waits.
+
+  _isSleeping = false;
 }
 
 // ================================
-// ÒÆ³ıÄ³Ïß³ÌÔÚÊÂ¼ş waiters ¶ÓÁĞÖĞµÄ¸¨Öúº¯Êı£¨¿É·ÅÔÚ cpp ÎÄ¼şÄÚ£¬·Ç³ÉÔ±£©
+// ä¿®æ”¹ç‰ˆ CanRun() â€”â€” å°†äº‹ä»¶ç­‰å¾…å’Œ suspend çº³å…¥åˆ¤æ–­
 // ================================
-static void remove_from_event_waiters(Event* ev, Thread* t)
-{
-    if (ev == nullptr) return;
-    for (auto it = ev->waiters.begin(); it != ev->waiters.end(); ++it) {
-        if (*it == t) {
-            ev->waiters.erase(it);
-            if (ev->contentionCount > 0) --ev->contentionCount;
-            break;
-        }
+bool Thread::CanRun() {
+  // 1) å¦‚æœæ‚¬æŒ‚ï¼ˆSuspendï¼‰ä¼˜å…ˆæ£€æŸ¥
+  if (_isSuspended)
+    return false;
+
+  // 2) ç¡çœ é€»è¾‘ï¼ˆå·²æœ‰ï¼‰
+  if (_isSleeping) {
+    if (_sleepEnd > std::chrono::high_resolution_clock::now())
+      return false;
+    _isSleeping = false;
+  }
+
+  // 3) å¦‚æœæ­£åœ¨ç­‰å¾…ä¸´ç•ŒåŒºï¼Œæ²¿ç”¨ä½ ä¹‹å‰çš„é€»è¾‘ï¼ˆä¿æŒä¸å˜ï¼‰
+  if (_requested != nullptr) {
+    CriticalSection *cs = _requested;
+    // å¦‚æœè¯·æ±‚çš„ä¸´ç•ŒåŒºç°åœ¨å·²è¢«æˆäºˆç»™æˆ‘ä»¬ï¼ˆå¯èƒ½åœ¨å¦ä¸€ä¸ªçº¿ç¨‹çš„ Leave ä¸­è½¬äº¤ï¼‰ï¼Œ
+    if (cs->ownerHandle == GetId()) {
+      // è®°å½•/ç¡®è®¤çº¿ç¨‹ç«¯çš„æŒæœ‰ï¼ˆå¦‚æœå°šæœªï¼‰
+      auto it = _ownedCriticalSections.find(cs);
+      if (it == _ownedCriticalSections.end()) {
+        _ownedCriticalSections[cs] = 1;
+      }
+      _requested = nullptr;
+      return true;
     }
+    // å¦åˆ™ä»ç„¶æ— æ³•è·å¾—
+    return false;
+  }
+
+  // 4) å¦‚æœæ­£åœ¨ç­‰å¾…äº‹ä»¶ï¼Œåˆ™æ£€æŸ¥è¶…æ—¶æˆ–äº‹ä»¶æ˜¯å¦å·²è¢« Setï¼ˆSetEvent ä¼šåœ¨å”¤é†’æ—¶æŠŠ
+  // _waitingEvent ç½® nullptrï¼‰
+  if (_waitingEvent != nullptr) {
+    Event *ev = _waitingEvent;
+
+    // å¦‚æœäº‹ä»¶åœ¨åˆ«å¤„è¢« Set è€Œæœªç§»é™¤æˆ‘ä»¬çš„ç­‰å¾…ï¼ˆæç«¯æƒ…å½¢ï¼‰ï¼Œä¹Ÿè¦å®‰å…¨å¤„ç†ï¼š
+    if (ev->signaled) {
+      if (!ev->manualReset) {
+        // auto resetï¼šå¦‚æœ signaled ä¸”æ— äººé˜Ÿåˆ—ï¼ˆæˆ–æˆ‘ä»¬ä¸æ˜¯é˜Ÿé¦–ï¼‰ï¼Œ
+        // ä¸ºç®€å•èµ·è§ï¼Œåœ¨è¿™é‡Œå°è¯•æ¶ˆè´¹å®ƒï¼ˆå¦‚æœæˆ‘ä»¬ä»ç„¶åœ¨é˜Ÿåˆ—ä¸­ï¼Œåˆ™æŠŠæˆ‘ä»¬ä»é˜Ÿåˆ—ç§»é™¤ï¼‰
+        remove_from_event_waiters(ev, this);
+        ev->signaled = false;
+      } else {
+        // manual resetï¼šç›´æ¥ç§»é™¤ç­‰å¾…å¹¶ç»§ç»­
+        remove_from_event_waiters(ev, this);
+      }
+      _waitingEvent = nullptr;
+      _waitingInfinite = false;
+      return true;
+    }
+
+    // æ£€æŸ¥è¶…æ—¶
+    if (!_waitingInfinite) {
+      auto now = std::chrono::high_resolution_clock::now();
+      if (now >= _waitTimeoutEnd) {
+        // è¶…æ—¶ï¼šä»äº‹ä»¶é˜Ÿåˆ—ç§»é™¤è‡ªå·±ï¼Œæ¸…ç†ç­‰å¾…æ ‡å¿—ï¼Œå¹¶è¿”å›å¯è¿è¡Œ
+        remove_from_event_waiters(ev, this);
+        _waitingEvent = nullptr;
+        _waitingInfinite = false;
+        return true; // è¶…æ—¶è¿”å›åçº¿ç¨‹ä¼šç»§ç»­æ‰§è¡Œï¼ˆè°ƒç”¨è€…éœ€è‡ªè¡Œæ£€æŸ¥è¶…æ—¶è¯­ä¹‰ï¼‰
+      }
+    }
+
+    // å¦åˆ™ä»åœ¨ç­‰å¾…ï¼Œä¸èƒ½è¿è¡Œ
+    return false;
+    return false;
+  }
+
+  // 5) Semaphore wait
+  if (_waitingSemaphore != nullptr) {
+    Semaphore *sem = _waitingSemaphore;
+
+    // Timeout check
+    if (!_waitingInfinite) {
+      auto now = std::chrono::high_resolution_clock::now();
+      if (now >= _waitTimeoutEnd) {
+        remove_from_semaphore_waiters(sem, this);
+        _waitingSemaphore = nullptr;
+        _waitingInfinite = false;
+        return true;
+      }
+    }
+    // If we are here, we are still waiting for semaphore
+    return false;
+  }
+
+  // 6) å¦åˆ™æ²¡æœ‰é˜»å¡æ¡ä»¶ï¼Œçº¿ç¨‹å¯ä»¥è¿è¡Œ
+  return true;
 }
-
-// ================================
-// ĞŞ¸Ä°æ CanRun() ¡ª¡ª ½«ÊÂ¼şµÈ´ıºÍ suspend ÄÉÈëÅĞ¶Ï
-// ================================
-bool Thread::CanRun()
-{
-    // 1) Èç¹ûĞü¹Ò£¨Suspend£©ÓÅÏÈ¼ì²é
-    if (_isSuspended)
-        return false;
-
-    // 2) Ë¯ÃßÂß¼­£¨ÒÑÓĞ£©
-    if (_isSleeping) {
-        if (_sleepEnd > std::chrono::high_resolution_clock::now())
-            return false;
-        _isSleeping = false;
-    }
-
-    // 3) Èç¹ûÕıÔÚµÈ´ıÁÙ½çÇø£¬ÑØÓÃÄãÖ®Ç°µÄÂß¼­£¨±£³Ö²»±ä£©
-    if (_requested != nullptr) {
-        CriticalSection* cs = _requested;
-        // Èç¹ûÇëÇóµÄÁÙ½çÇøÏÖÔÚÒÑ±»ÊÚÓè¸øÎÒÃÇ£¨¿ÉÄÜÔÚÁíÒ»¸öÏß³ÌµÄ Leave ÖĞ×ª½»£©£¬
-        if (cs->ownerHandle == GetId()) {
-            // ¼ÇÂ¼/È·ÈÏÏß³Ì¶ËµÄ³ÖÓĞ£¨Èç¹ûÉĞÎ´£©
-            auto it = _ownedCriticalSections.find(cs);
-            if (it == _ownedCriticalSections.end()) {
-                _ownedCriticalSections[cs] = 1;
-            }
-            _requested = nullptr;
-            return true;
-        }
-        // ·ñÔòÈÔÈ»ÎŞ·¨»ñµÃ
-        return false;
-    }
-
-    // 4) Èç¹ûÕıÔÚµÈ´ıÊÂ¼ş£¬Ôò¼ì²é³¬Ê±»òÊÂ¼şÊÇ·ñÒÑ±» Set£¨SetEvent »áÔÚ»½ĞÑÊ±°Ñ _waitingEvent ÖÃ nullptr£©
-    if (_waitingEvent != nullptr) {
-        Event* ev = _waitingEvent;
-
-        // Èç¹ûÊÂ¼şÔÚ±ğ´¦±» Set ¶øÎ´ÒÆ³ıÎÒÃÇµÄµÈ´ı£¨¼«¶ËÇéĞÎ£©£¬Ò²Òª°²È«´¦Àí£º
-        if (ev->signaled) {
-            if (!ev->manualReset) {
-                // auto reset£ºÈç¹û signaled ÇÒÎŞÈË¶ÓÁĞ£¨»òÎÒÃÇ²»ÊÇ¶ÓÊ×£©£¬
-                // Îª¼òµ¥Æğ¼û£¬ÔÚÕâÀï³¢ÊÔÏû·ÑËü£¨Èç¹ûÎÒÃÇÈÔÈ»ÔÚ¶ÓÁĞÖĞ£¬Ôò°ÑÎÒÃÇ´Ó¶ÓÁĞÒÆ³ı£©
-                remove_from_event_waiters(ev, this);
-                ev->signaled = false;
-            }
-            else {
-                // manual reset£ºÖ±½ÓÒÆ³ıµÈ´ı²¢¼ÌĞø
-                remove_from_event_waiters(ev, this);
-            }
-            _waitingEvent = nullptr;
-            _waitingInfinite = false;
-            return true;
-        }
-
-        // ¼ì²é³¬Ê±
-        if (!_waitingInfinite) {
-            auto now = std::chrono::high_resolution_clock::now();
-            if (now >= _waitTimeoutEnd) {
-                // ³¬Ê±£º´ÓÊÂ¼ş¶ÓÁĞÒÆ³ı×Ô¼º£¬ÇåÀíµÈ´ı±êÖ¾£¬²¢·µ»Ø¿ÉÔËĞĞ
-                remove_from_event_waiters(ev, this);
-                _waitingEvent = nullptr;
-                _waitingInfinite = false;
-                return true; // ³¬Ê±·µ»ØºóÏß³Ì»á¼ÌĞøÖ´ĞĞ£¨µ÷ÓÃÕßĞè×ÔĞĞ¼ì²é³¬Ê±ÓïÒå£©
-            }
-        }
-
-        // ·ñÔòÈÔÔÚµÈ´ı£¬²»ÄÜÔËĞĞ
-        return false;
-    }
-
-    // 5) ·ñÔòÃ»ÓĞ×èÈûÌõ¼ş£¬Ïß³Ì¿ÉÒÔÔËĞĞ
-    return true;
-}
-void Thread::Sleep(uint32_t time)
-{
-    _isSleeping = true;
-    _sleepEnd = std::chrono::high_resolution_clock::now() + std::chrono::milliseconds(time);
+void Thread::Sleep(uint32_t time) {
+  _isSleeping = true;
+  _sleepEnd = std::chrono::high_resolution_clock::now() +
+              std::chrono::milliseconds(time);
 }

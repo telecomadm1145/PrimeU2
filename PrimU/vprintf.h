@@ -1,4 +1,4 @@
-
+﻿
 #ifndef VPRINTF_EE_H
 #define VPRINTF_EE_H
 

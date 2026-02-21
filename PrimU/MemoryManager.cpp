@@ -10,7 +10,7 @@
 
 // 定义堆分配前后缀的 "cookie" 或 "canary"
 // 用于检测缓冲区溢出/下溢
-static const uint64_t kHeapCookie = 0xccbccbccbccbccbull;
+static const uint64_t kHeapCookie = 0xcc'cc'cc'cc'cc'cc'cc'ccull;
 static const size_t   kCookieSize = sizeof(kHeapCookie);
 
 MemoryManager* MemoryManager::_instance = nullptr;
@@ -39,7 +39,7 @@ MemoryManager::MemoryManager()
 		sExecutor->GetUcInstance(),
 		MEM_DYNAMIC_HEAP_BASE,
 		pageAlignedSize,
-		3,
+		7,
 		realMemory
 	);
 	if (err != UC_ERR_OK) {

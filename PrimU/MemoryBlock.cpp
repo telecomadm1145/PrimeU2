@@ -1,4 +1,4 @@
-#include "MemoryBlock.h"
+﻿#include "MemoryBlock.h"
 #include "executor.h"
 
 MemoryChunk* MemoryBlock::VirtualAlloc(size_t size)

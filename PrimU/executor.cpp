@@ -5,13 +5,14 @@
 #include "executable.h"
 #include "interrupts.h"
 #include "InterruptHandler.h"
-#include "SystemAPI.h"
+#include "Marshal.h"
 #include "Thread.h"
 #include "ThreadHandler.h"
 
 #include <valarray>
 #include <chrono>
 #include <capstone/capstone.h>
+#include "Services.h"
 
 Executor* Executor::m_instance = nullptr;
 
@@ -161,7 +162,13 @@ void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 	static auto epoch = std::chrono::high_resolution_clock::now();
 	static auto lastUpdate = std::chrono::high_resolution_clock::now();
 	static auto last_int = std::chrono::high_resolution_clock::now();
+	uint32_t cpsr;
+	uc_reg_read(uc, UC_ARM_REG_CPSR, &cpsr);
 
+	bool irq_enabled = !(cpsr & (1 << 7));
+	bool fiq_enabled = !(cpsr & (1 << 6));
+	if (!irq_enabled)
+		return;
 	auto now = std::chrono::high_resolution_clock::now();
 	*__GET(uint32_t*, 0x51000040) = std::chrono::duration_cast<std::chrono::microseconds>(now - epoch).count(); // Update system time for the guest (in milliseconds)
 	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
@@ -238,7 +245,7 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 	//	return;
 	//}
 	if (type == UC_MEM_FETCH_UNMAPPED || type == UC_MEM_FETCH_PROT) {
-		if (pc < 0x1000) {
+		if (pc < 0x2000) {
 			uc_reg_write(uc, UC_ARM_REG_PC, &lr);
 			return;
 		}
@@ -338,7 +345,7 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 		printf("    Failed to initialize Capstone disassembler.\n");
 	}
 	PrintStackTrace(uc);
-	__debugbreak();
+	//__debugbreak();
 }
 // BLOCK - 1 - end
 bool Executor::Cleanup()
@@ -358,6 +365,9 @@ bool Executor::InitInterrupts()
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_INVALID, pf, 0, 1, 0));
+	uint32_t cpsr = 0;
+	//uc_reg_read(m_uc, UC_ARM_REG_CPSR, &cpsr);
+	uc_reg_write(m_uc, UC_ARM_REG_CPSR, &cpsr);
 	//callAndcheckError(uc_hook_add(m_uc, &m_tmp, UC_HOOK_CODE, co_hook, 0, 0x30680A40, 0x30680A40 + 1));
 	return true;
 }
@@ -529,8 +539,18 @@ void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_d
 
 
 	SVC &= 0xFFFFF;
-
-	uint32_t return_value = sSystemAPI->Call(static_cast<InterruptID>(SVC), SystemServiceArguments(lr - 4));
+	SystemServiceArguments args2(lr - 4);
+	if (SVC < SDKLIB_FirstService || SVC > SDKLIB_LastService) {
+		printf("Unknown SVC: %u at PC: %08X\n", SVC, pc - 4);
+		sp += 8;
+		uint32_t empty = 0;
+		uc_reg_write(uc, UC_ARM_REG_R0, &empty);
+		uc_reg_write(uc, UC_ARM_REG_SP, &sp);
+		uc_reg_write(uc, UC_ARM_REG_PC, &lr);
+		return;
+	}
+	auto f = service_table.at(SVC - SDKLIB_FirstService);
+	uint32_t return_value = f ? f(&args2) : 0;
 	// printf("    Caller: %08X\n    PC: %08X\n", lr - 4, pc);
 	sp += 8;
 

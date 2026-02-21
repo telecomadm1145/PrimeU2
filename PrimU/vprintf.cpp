@@ -1,4 +1,4 @@
-/*
+﻿/*
 File: printf.c
 
 Copyright (C) 2004,2008  Kustaa Nyholm

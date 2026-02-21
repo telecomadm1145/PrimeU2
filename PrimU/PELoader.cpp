@@ -1,4 +1,4 @@
-// PE Loader for ARM (PE32) with: 
+﻿// PE Loader for ARM (PE32) with: 
 //  - import by ordinal support
 //  - Thumb-aware stubs (unresolved imports get Thumb stubs by default)
 //  - fixed redirection/recursion logic for loading dependencies

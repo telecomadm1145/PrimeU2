@@ -10,6 +10,13 @@
 #include <mutex>
 #include <chrono>
 
+#include <SDL.h>
+#include "imgui.h"
+#include "imgui_memory_editor.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_internal.h"
+#include "imgui_impl_sdlrenderer2.h"
+
 
 // --- Globals for Window Management ---
 // Since we cannot modify the LCD struct, we use a global map to associate
@@ -165,6 +172,75 @@ LCD::LCD() {
 		// Create a new entry in the map and launch the thread
 		g_LcdWindowMap[this].isExiting = false;
 		g_LcdWindowMap[this].windowThread = std::thread(WindowThreadProc, this);
+
+		std::thread([]() {
+			SDL_Init(0);
+			bool busy = false;
+			bool running = true;
+			auto frame_event = SDL_RegisterEvents(1);
+			auto win = SDL_CreateWindow("Hex editor", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_RESIZABLE);
+			auto renderer = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+			IMGUI_CHECKVERSION();
+			ImGui::CreateContext();
+			ImGuiIO& io = ImGui::GetIO();
+			io.WantCaptureKeyboard = true;
+			io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+			io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+			io.Fonts->AddFontDefault();
+			io.Fonts->Build();
+			ImGui_ImplSDL2_InitForSDLRenderer(win, renderer);
+			ImGui_ImplSDLRenderer2_Init(renderer);
+			std::thread t3([&]() {
+				SDL_Event se{};
+				se.type = frame_event;
+				se.user.windowID = SDL_GetWindowID(win);
+				while (running) {
+					if (!busy)
+						SDL_PushEvent(&se);
+					SDL_Delay(1);
+				}
+				});
+			t3.detach();
+			SDL_ShowWindow(win);
+			MemoryEditor me{};
+			me.ReadFn = [](const ImU8* mem, size_t off, void* user_data) -> ImU8 {
+				auto f = __GET(ImU8*, (size_t)mem + off);
+				if (f)
+					return *f;
+				return 0;
+				};
+			me.WriteFn = [](ImU8* mem, size_t off, ImU8 d, void* user_data) {
+				auto f = __GET(ImU8*, (size_t)mem + off);
+				if (f)
+					*f = d;
+				};
+			while (1) {
+				SDL_Event event{};
+				busy = false;
+				if (!SDL_PollEvent(&event))
+					continue;
+				busy = true;
+				if (event.type == frame_event) {
+					SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+					SDL_RenderClear(renderer);
+					ImGui_ImplSDLRenderer2_NewFrame();
+					ImGui_ImplSDL2_NewFrame();
+					ImGui::NewFrame();
+					ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+					ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver); // TODO: ????????
+					//ImGui::Begin("Editor");
+					me.DrawWindow("Editor", (void*)0x20'00'00'00, 0x20'00'00'00, 0x20'00'00'00);
+					//ImGui::End();
+					ImGui::EndFrame();
+					ImGui::Render();
+					ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData());
+					SDL_RenderPresent(renderer);
+				}
+				else {
+					ImGui_ImplSDL2_ProcessEvent(&event);
+				}
+			}
+			}).detach();
 	}
 
 	// Wait for the window to be created by the new thread
