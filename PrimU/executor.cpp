@@ -14,6 +14,7 @@
 #include <capstone/capstone.h>
 #include "Services.h"
 #include "log.h"
+#include <Windows.h>
 
 Executor* Executor::m_instance = nullptr;
 
@@ -164,43 +165,40 @@ RollingLogBuffer<BlockLog> block_log(102400);
 void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
 void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
-	static auto epoch = std::chrono::high_resolution_clock::now();
-	static auto lastUpdate = std::chrono::high_resolution_clock::now();
-	static auto last_int = std::chrono::high_resolution_clock::now();
-	block_log.push({ (uint32_t)address ,sThreadHandler->GetCurrentThreadId() });
-	auto now = std::chrono::high_resolution_clock::now();
-	*__GET(uint32_t*, 0x51000040) = std::chrono::duration_cast<std::chrono::microseconds>(now - epoch).count(); // Update system time for the guest (in milliseconds)
-	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
-	std::chrono::milliseconds elapsed_2 = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_int);
-	using std::chrono_literals::operator""ms;
-	if (elapsed_2 > 5000ms && sThreadHandler->GetCurrentThreadId() == 0 && sThreadHandler->interruptPC) {
-		// Lets entering a interrupt here.
+	static DWORD epoch = GetTickCount();
+	static DWORD lastUpdate = GetTickCount();
+	static DWORD last_int = GetTickCount();
+	static uint32_t* const sysTimePtr = __GET(uint32_t*, 0x51000040);
+
+	block_log.push({ (uint32_t)address, sThreadHandler->GetCurrentThreadId() });
+
+	DWORD now = GetTickCount();
+	*sysTimePtr = (now - epoch) * 1000u; // Convert ms to microseconds
+
+	DWORD elapsed = now - lastUpdate;
+	DWORD elapsed_2 = now - last_int;
+
+	if (elapsed_2 > 5000 && sThreadHandler->GetCurrentThreadId() == 0 && sThreadHandler->interruptPC) {
 		last_int = now;
-		//sThreadHandler->SaveCurrentThreadState();
-		//printf("Entering interrupt at %08X\n", sThreadHandler->interruptPC);
-		//uc_reg_write(uc, UC_ARM_REG_PC, &sThreadHandler->interruptPC);
 		return;
 	}
 	if (sThreadHandler->interruptPC == 0xAAAAAAAA) {
 		sThreadHandler->interruptPC = 0;
-		//sThreadHandler->LoadCurrentThreadState();
 		return;
 	}
-	bool canrun = sThreadHandler->CanCurrentThreadRun();
 	if (sThreadHandler->yielding) {
 		uc_emu_stop(sExecutor->GetUcInstance());
 		sThreadHandler->SaveCurrentThreadState();
 		sThreadHandler->yielding = false;
-		lastUpdate = std::chrono::high_resolution_clock::now();
+		lastUpdate = GetTickCount();
 		return;
 	}
-	if ((elapsed.count() < sThreadHandler->GetCurrentThreadQuantum() && canrun)) {
+	if (elapsed < (DWORD)sThreadHandler->GetCurrentThreadQuantum() && sThreadHandler->CanCurrentThreadRun()) {
 		return;
 	}
 	uc_emu_stop(sExecutor->GetUcInstance());
 	sThreadHandler->SaveCurrentThreadState();
-
-	lastUpdate = std::chrono::high_resolution_clock::now();
+	lastUpdate = GetTickCount();
 }
 
 bool Executor::Initialize(Executable* exec)
