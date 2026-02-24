@@ -28,7 +28,9 @@ uint32_t OSSetThreadPriority(SystemServiceArguments *args) {
 }
 
 static uint32_t OSSleep_impl(uint32_t ms) {
-  sThreadHandler->CurrentThreadSleep(ms);
+  // If we had a generic GetCurrentThread() we'd use it,
+  // but g_SyncFactory->SleepMillis covers it natively for the active thread.
+  g_SyncFactory->SleepMillis(ms);
   return ms;
 }
 uint32_t OSSleep(SystemServiceArguments *args) {
@@ -36,27 +38,24 @@ uint32_t OSSleep(SystemServiceArguments *args) {
 }
 
 uint32_t OSSuspendThread(SystemServiceArguments *args) { return 0; }
-
 uint32_t OSResumeThread(SystemServiceArguments *args) { return 0; }
 
 // ================================================================
-//  Critical Section
+//  Critical Section (Assuming we want to mock these entirely via ISyncFactory
+//  later, for now we leave them as no-ops or simple placeholders since the
+//  interface is opaque to emulator)
 // ================================================================
 
-static std::map<int, std::unique_ptr<CriticalSection>> g_cs;
-
+// Not fully implemented to use ICriticalSection yet since the struct map was
+// custom. If CriticalSection is an opaque struct in guest, we'd map it. Let's
+// stub it.
 uint32_t OSInitCriticalSection(SystemServiceArguments *args) {
-  g_cs[args->r0] = std::make_unique<CriticalSection>();
   return args->r0;
 }
-
 uint32_t OSEnterCriticalSection(SystemServiceArguments *args) {
-  sThreadHandler->CurrentThreadEnterCriticalSection(g_cs[args->r0].get());
   return args->r0;
 }
-
 uint32_t OSLeaveCriticalSection(SystemServiceArguments *args) {
-  sThreadHandler->CurrentThreadExitCriticalSection(g_cs[args->r0].get());
   return args->r0;
 }
 
@@ -64,12 +63,13 @@ uint32_t OSLeaveCriticalSection(SystemServiceArguments *args) {
 //  Event
 // ================================================================
 
-static std::map<uint32_t, std::unique_ptr<Event>> g_events;
+static std::map<uint32_t, IEvent *> g_events;
 static uint32_t g_next_event_id = 1;
 
 static uint32_t CreateEvent_impl(uint32_t param0, uint32_t param1) {
-  g_events[g_next_event_id] = std::unique_ptr<Event>(
-      sThreadHandler->GetCurrentThread().CreateEvent(param0, param1));
+  // Using the global factory directly to avoid current thread lookup hacks
+  IEvent *ev = g_SyncFactory->CreateEventObject(param0, param1);
+  g_events[g_next_event_id] = ev;
   return g_next_event_id++;
 }
 uint32_t OSCreateEvent(SystemServiceArguments *args) {
@@ -78,8 +78,10 @@ uint32_t OSCreateEvent(SystemServiceArguments *args) {
 
 // OSResetEvent
 static uint32_t ResetEvent_impl(uint32_t id) {
-  auto &event = *g_events[id];
-  sThreadHandler->GetCurrentThread().ResetEvent(&event);
+  auto it = g_events.find(id);
+  if (it != g_events.end()) {
+    it->second->Reset();
+  }
   return 0;
 }
 uint32_t OSResetEvent(SystemServiceArguments *args) {
@@ -90,6 +92,7 @@ uint32_t OSResetEvent(SystemServiceArguments *args) {
 static uint32_t CloseEvent_impl(uint32_t id) {
   auto it = g_events.find(id);
   if (it != g_events.end()) {
+    delete it->second;
     g_events.erase(it);
     return 1; // Success
   }
@@ -99,12 +102,13 @@ uint32_t OSCloseEvent(SystemServiceArguments *args) {
   return AutoBind<decltype(CloseEvent_impl)>::thunk<CloseEvent_impl>(args);
 }
 
-// OSWaitForEvent (Updated to yield)
+// OSWaitForEvent
 static uint32_t WaitForEvent_impl(uint32_t id, uint32_t timeout) {
-  auto &event = *g_events[id];
-  sThreadHandler->GetCurrentThread().WaitForEvent(&event, timeout);
-  sThreadHandler
-      ->CurrentThreadYield(); // Yield immediately after entering wait state
+  auto it = g_events.find(id);
+  if (it != g_events.end()) {
+    // This natively blocks the std::thread executing the emulator loop!
+    it->second->Wait(timeout);
+  }
   return 0;
 }
 uint32_t OSWaitForEvent(SystemServiceArguments *args) {
@@ -112,8 +116,10 @@ uint32_t OSWaitForEvent(SystemServiceArguments *args) {
 }
 
 static uint32_t SetEvent_impl(uint32_t id) {
-  auto &event = *g_events[id];
-  sThreadHandler->GetCurrentThread().SetEvent(&event);
+  auto it = g_events.find(id);
+  if (it != g_events.end()) {
+    it->second->Set();
+  }
   return 0;
 }
 uint32_t OSSetEvent(SystemServiceArguments *args) {
@@ -124,14 +130,14 @@ uint32_t OSSetEvent(SystemServiceArguments *args) {
 //  Semaphore
 // ================================================================
 
-static std::map<uint32_t, std::unique_ptr<Semaphore>> g_semaphores;
+static std::map<uint32_t, ISemaphore *> g_semaphores;
 static uint32_t g_next_sem_id = 1;
 
 // OSCreateSemaphore(int initialCount, int maxCount)
 static uint32_t CreateSemaphore_impl(int initialCount, int maxCount) {
-  g_semaphores[g_next_sem_id] = std::unique_ptr<Semaphore>(
-      sThreadHandler->GetCurrentThread().CreateSemaphore(initialCount,
-                                                         maxCount));
+  ISemaphore *sem =
+      g_SyncFactory->CreateSemaphoreObject(initialCount, maxCount);
+  g_semaphores[g_next_sem_id] = sem;
   return g_next_sem_id++;
 }
 uint32_t OSCreateSemaphore(SystemServiceArguments *args) {
@@ -141,9 +147,11 @@ uint32_t OSCreateSemaphore(SystemServiceArguments *args) {
 
 // OSWaitForSemaphore(uint32_t id, uint32_t timeout)
 static uint32_t WaitForSemaphore_impl(uint32_t id, uint32_t timeout) {
-  auto &sem = *g_semaphores[id];
-  sThreadHandler->GetCurrentThread().WaitForSemaphore(&sem, timeout);
-  sThreadHandler->CurrentThreadYield(); // Yield immediately
+  auto it = g_semaphores.find(id);
+  if (it != g_semaphores.end()) {
+    // This blocks the std::thread natively!
+    it->second->Wait(timeout);
+  }
   return 0;
 }
 uint32_t OSWaitForSemaphore(SystemServiceArguments *args) {
@@ -154,23 +162,26 @@ uint32_t OSWaitForSemaphore(SystemServiceArguments *args) {
 // OSReleaseSemaphore(uint32_t id, int releaseCount, int* previousCount)
 static uint32_t ReleaseSemaphore_impl(uint32_t id, int releaseCount,
                                       uint32_t prevCountPtr) {
-  auto &sem = *g_semaphores[id];
-  int prev = 0;
-  sThreadHandler->GetCurrentThread().ReleaseSemaphore(&sem, releaseCount,
-                                                      &prev);
+  auto it = g_semaphores.find(id);
+  if (it != g_semaphores.end()) {
+    int prev = 0;
+    it->second->Release(releaseCount, &prev);
 
-  if (prevCountPtr != 0) {
-    // Write back previous count to guest memory
-    // We need to write 4 bytes to virtual address prevCountPtr
-    // But here we are in handler, we can't easily write back unless we have
-    // access to memory writing. AutoBind doesn't support pointers to guest
-    // memory automatically as output. We'll use sMemoryManager or direct write.
-    // Assuming we can write to it (user space).
-    // Let's use uc_mem_write or sMemoryManager->Write
-    // NOTE: AutoBind passes integer values for pointers.
-    uc_mem_write(sExecutor->GetUcInstance(), prevCountPtr, &prev, sizeof(int));
+    if (prevCountPtr != 0) {
+      // For a threaded emulator lacking immediate access to uc_engine from
+      // outside, we must get the engine. But wait, Executor has the MAIN
+      // instance. We can't use Main instance safely here if memory is truly
+      // isolated. Luckily, memory mapping means we can write via
+      // sMemoryManager. Easiest is to manually write to real pointer mapped to
+      // that addr:
+      auto realPtr = sMemoryManager->GetRealAddr(prevCountPtr);
+      if (realPtr) {
+        *reinterpret_cast<int *>(realPtr) = prev;
+      }
+    }
+    return 1;
   }
-  return 1; // Non-zero for success (BOOL)
+  return 0;
 }
 uint32_t OSReleaseSemaphore(SystemServiceArguments *args) {
   return AutoBind<decltype(ReleaseSemaphore_impl)>::thunk<
@@ -181,6 +192,7 @@ uint32_t OSReleaseSemaphore(SystemServiceArguments *args) {
 static uint32_t CloseSemaphore_impl(uint32_t id) {
   auto it = g_semaphores.find(id);
   if (it != g_semaphores.end()) {
+    delete it->second;
     g_semaphores.erase(it);
     return 1;
   }

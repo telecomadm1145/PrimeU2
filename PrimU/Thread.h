@@ -1,151 +1,66 @@
 ﻿#ifndef THREAD_H
 #define THREAD_H
 
+#include "SyncPrimitives.h"
 #include "executor.h"
+#include <atomic>
 #include <chrono>
+#include <thread>
+#include <unicorn/unicorn.h>
+#include <unordered_map>
 
-class ThreadState {
-public:
-  ThreadState(VirtPtr startPtr, VirtPtr stackPtr, uint32_t arg)
-      : _r0(arg), _sp(stackPtr), _pc(startPtr) {
-    uc_context_alloc(sExecutor->GetUcInstance(), &_state);
-  }
-
-  ~ThreadState() { uc_free(&_state); }
-
-  void LoadState();
-  void SaveState();
-  uint32_t GetCurrentAddr() const { return _pc; }
-
-private:
-  uint32_t _r0 = 0;
-  uint32_t _r1 = 0;
-  uint32_t _r2 = 0;
-  uint32_t _r3 = 0;
-  uint32_t _r4 = 0;
-  uint32_t _r5 = 0;
-  uint32_t _r6 = 0;
-  uint32_t _r7 = 0;
-  uint32_t _r8 = 0;
-  uint32_t _r9 = 0;
-  uint32_t _r10 = 0;
-  uint32_t _r11 = 0;
-  uint32_t _r12 = 0;
-  uint32_t _sp = 0;
-  uint32_t _pc = 0;
-  uint32_t _lr = 0;
-
-  uc_context *_state;
-  bool _isNewThread = true;
-
-  uc_arm_reg _regs[16] = {
-      UC_ARM_REG_R0,  UC_ARM_REG_R1, UC_ARM_REG_R2,  UC_ARM_REG_R3,
-      UC_ARM_REG_R4,  UC_ARM_REG_R5, UC_ARM_REG_R6,  UC_ARM_REG_R7,
-      UC_ARM_REG_R8,  UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11,
-      UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR,  UC_ARM_REG_PC};
-
-  void *_args[16] = {&_r0, &_r1, &_r2,  &_r3,  &_r4,  &_r5, &_r6, &_r7,
-                     &_r8, &_r9, &_r10, &_r11, &_r12, &_sp, &_lr, &_pc};
-};
-
-struct CriticalSection;
+// Note: CriticalSection, Event, and Semaphore will now be wrappers around
+// the ISyncFactory interfaces.
+inline thread_local Thread* currentThread = nullptr;
 
 class Thread {
 public:
-  Thread(Thread **currentThread, VirtPtr start, uint32_t arg, uint8_t priority,
-         size_t stackSize)
-      : _id(GenerateUniqueId()) {
-    if (*currentThread == nullptr) {
-      SetNextThread(this);
-      *currentThread = this;
-    } else {
-      SetNextThread((*currentThread)->GetNextThread());
-      (*currentThread)->SetNextThread(this);
-    }
+	// Instead of static chaining, threads will just run independently.
+	Thread(VirtPtr start, uint32_t arg, uint8_t priority, size_t stackSize);
+	~Thread();
 
-    if (stackSize != 0)
-      _stackSize = stackSize;
+	// Used by the system to start the standard thread.
+	void Start();
 
-    VirtPtr stackPtrStart;
-    sMemoryManager->DyanmicAlloc(&_stackAddr, _stackSize);
-    stackPtrStart = sMemoryManager->GetAllocSize(_stackAddr) + _stackAddr;
-    printf("Thread [%i] -> %08X stack starts at %08X and ends at %08X\n", _id,
-           start, stackPtrStart, _stackAddr);
+	// Sleep this thread natively
+	void Sleep(uint32_t time);
 
-    _state = new ThreadState(start, stackPtrStart, arg);
+	void SetPriority(uint8_t priority) { _priority = priority; }
+	uint8_t GetPriority() const { return _priority; }
 
-    SetPriority(priority);
-    _requested = nullptr;
-  }
+	// Sync API wrappers calling into SyncFactory
+	IEvent* CreateEvent(bool bManualReset, bool bInitialState);
+	void SetEvent(IEvent* ev);
+	void ResetEvent(IEvent* ev);
+	void WaitForEvent(IEvent* ev, int timeoutMillis);
 
-  ~Thread() {
-    sMemoryManager->DynamicFree(_stackAddr);
-    delete _state;
-  }
+	ISemaphore* CreateSemaphore(int initialCount, int maxCount);
+	void WaitForSemaphore(ISemaphore* sem, int timeoutMillis);
+	void ReleaseSemaphore(ISemaphore* sem, int releaseCount, int* previousCount);
 
-  void SetNextThread(Thread *nextThread) { _nextThread = nextThread; }
-  Thread *GetNextThread() const { return _nextThread; }
+	int GetId() const { return _id; }
 
-  void SaveState();
-  void LoadState();
-
-  void EnterCriticalSection(CriticalSection *criticalSection);
-  void LeaveCriticalSection(CriticalSection *criticalSection);
-
-  void Sleep(uint32_t time);
-
-  void SetPriority(uint8_t priority) { _priority = priority; }
-
-  uint32_t GetTimeQuantum();
-  uint32_t GetCurrentPC() const { return _state->GetCurrentAddr(); }
-  uint8_t GetPriority() const { return _priority; }
-
-  // Event API
-  struct Event *CreateEvent(bool bManualReset, bool bInitialState);
-  void SetEvent(Event *ev);
-  void ResetEvent(Event *ev);
-  void
-  WaitForEvent(Event *ev,
-               int timeoutMillis); // timeout in ms, <0 = infinite, 0 = poll
-
-  // Semaphore API
-  struct Semaphore *CreateSemaphore(int initialCount, int maxCount);
-  void WaitForSemaphore(Semaphore *sem, int timeoutMillis);
-  void ReleaseSemaphore(Semaphore *sem, int releaseCount, int *previousCount);
-
-  // Suspend / Resume
-  void Suspend();
-  void Resume();
-
-  void Wake(); // 唤醒线程（清除 sleep/wait 状态）
-
-  bool CanRun();
-  int GetId() const { return _id; }
+	// Each thread gets its own UC Instance pointing to the shared memory blocks.
+	uc_engine* engine() const { return _uc; }
 
 private:
-  static int GenerateUniqueId();
+	static int GenerateUniqueId();
 
-  ThreadState *_state;
+	void ThreadProc();
+	bool MapSharedMemoryToLocalEngine();
 
-  uint8_t _priority;
-  int _id;
-  size_t _stackSize = 0x2000;
-  VirtPtr _stackAddr;
+	uc_engine* _uc;
+	std::thread _nativeThread;
 
-  Thread *_nextThread;
-  CriticalSection *_requested = nullptr;
-  std::unordered_map<CriticalSection *, int> _ownedCriticalSections;
+	uint8_t _priority;
+	int _id;
+	size_t _stackSize = 0x2000;
+	VirtPtr _stackAddr;
 
-  Event *_waitingEvent = nullptr; // 当前正在等待的事件（或 nullptr）
-  Semaphore *_waitingSemaphore = nullptr; // 当前正在等待的信号量
-  std::chrono::high_resolution_clock::time_point _waitTimeoutEnd;
-  bool _waitingInfinite = false; // timeout < 0 表示无限等待
-
-  int _suspendCount = 0; // 嵌套 suspend 的计数
-  bool _isSuspended = false;
-
-  std::chrono::high_resolution_clock::time_point _sleepEnd;
-  bool _isSleeping = false;
+	VirtPtr _startPc;
+	uint32_t _startArg;
+	VirtPtr _startSp;
+	friend class StateManager;
 };
 
 #endif

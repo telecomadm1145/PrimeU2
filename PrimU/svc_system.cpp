@@ -127,10 +127,10 @@ uint32_t SysPowerOff(SystemServiceArguments* args) {
 	return 0;
 }
 
-uint32_t BatteryLowCheck(SystemServiceArguments* args) { 
+uint32_t BatteryLowCheck(SystemServiceArguments* args) {
 	// -1 battery low
 	// -2 battery critical
-	return 0; 
+	return 0;
 }
 
 uint32_t InterruptInitialize(SystemServiceArguments* args) {
@@ -143,7 +143,6 @@ uint32_t InterruptDone(SystemServiceArguments* args) {
 	if (sThreadHandler->interrupting) {
 		printf("Stop emu!\n");
 		sThreadHandler->interruptPC = 0xAAAAAAAA;
-		sThreadHandler->SwitchThread();
 	}
 	return 0;
 }
@@ -163,7 +162,6 @@ static std::atomic<bool> touch = false;
 void EnqueueEvent(UIMultipressEvent uime) {
 	std::lock_guard lg(g_event_lock);
 	g_events_queue.push_back(uime);
-	sThreadHandler->WakeThread(_ui_thread_id);
 }
 
 void EnqueueSpecial(int val) { special_event.store(val); }
@@ -176,49 +174,46 @@ void TouchUpdate(int x, int y, int finger_id, ui_event_type_e status) {
 	touch_states[finger_id].touch_y = y;
 	touch_states[finger_id].status = status;
 	touch.store(true);
-	sThreadHandler->WakeThread(_ui_thread_id);
 }
 
 uint32_t GetEvent(SystemServiceArguments* args) {
 	auto& event = *__GET(ui_event_prime_s*, args->r0);
 	event = {};
+restart:
 	int k;
 	if (k = special_event.load()) {
 		special_event.store(0);
 		event.event_type = (ui_event_type_e)k;
 		return 0;
 	}
-	std::lock_guard lg(g_event_lock);
-	event.event_type = UI_EVENT_TYPE_TOUCH;
-	if (touch.load()) {
-		for (size_t i = 0; i < MAX_MULTIPRESS_EVENTS; ++i) {
-			if (touch_states[i].status != UI_EVENT_TYPE_INVALID)
-				event.multipress_events[event.available_multipress_events++] =
-				touch_states[i];
+	{
+		std::lock_guard lg(g_event_lock);
+		event.event_type = UI_EVENT_TYPE_TOUCH;
+		if (touch.load()) {
+			for (size_t i = 0; i < MAX_MULTIPRESS_EVENTS; ++i) {
+				if (touch_states[i].status != UI_EVENT_TYPE_INVALID)
+					event.multipress_events[event.available_multipress_events++] =
+					touch_states[i];
+			}
+			event.available_multipress_events = 8;
+			touch.store(false);
+			return 0;
 		}
-		event.available_multipress_events = 8;
-		touch.store(false);
-		return 0;
-	}
-	if (!g_events_queue.empty()) {
-		event.event_type = UI_EVENT_TYPE_KEY_BATCH;
-		if (g_events_queue.size() > 8) {
+		if (!g_events_queue.empty()) {
+			event.event_type = UI_EVENT_TYPE_KEY_BATCH;
+			if (g_events_queue.size() > 8) {
+				g_events_queue.clear();
+				return 0;
+			}
+			event.available_multipress_events = (uint32_t)g_events_queue.size();
+			std::copy(g_events_queue.begin(), g_events_queue.end(),
+				event.multipress_events);
 			g_events_queue.clear();
 			return 0;
 		}
-		event.available_multipress_events = (uint32_t)g_events_queue.size();
-		std::copy(g_events_queue.begin(), g_events_queue.end(),
-			event.multipress_events);
-		g_events_queue.clear();
 	}
-	else {
-		_ui_thread_id = sThreadHandler->GetCurrentThreadId();
-		sThreadHandler->CurrentThreadSleep(
-			50); // Sleep 50ms, relying on WakeThread to wake us early
-		sThreadHandler->CurrentThreadYield();
-		event.event_type = UI_EVENT_TYPE_INVALID;
-	}
-	return 0;
+	g_SyncFactory->SleepMillis(50); // Sleep 50ms natively
+	goto restart;
 }
 
 // ================================================================
@@ -326,7 +321,8 @@ static std::vector<uint8_t> g_frp_data;
 static const char* FRP_PERSIST_PATH = "frp_data.bin";
 
 static void frp_load() {
-	if (!g_frp_data.empty()) return;
+	if (!g_frp_data.empty())
+		return;
 	std::ifstream f(FRP_PERSIST_PATH, std::ios::binary | std::ios::ate);
 	if (f.is_open()) {
 		auto sz = f.tellg();
@@ -338,7 +334,8 @@ static void frp_load() {
 }
 
 static void frp_save() {
-	if (g_frp_data.empty()) return;
+	if (g_frp_data.empty())
+		return;
 	std::ofstream f(FRP_PERSIST_PATH, std::ios::binary);
 	f.write((char*)g_frp_data.data(), g_frp_data.size());
 	std::cout << "    +FRP: saved " << g_frp_data.size() << " bytes to disk\n";
@@ -362,8 +359,8 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 	if (g_vdev_table[handle].ends_with("BAT")) {
 		auto voltage = (uint16_t*)out;
 		memset(voltage, 0, outlen);
-		voltage[5] = 4;     // 0-4 bat level
-		voltage[7] = 0;     // 0: not charging, 1: charging, 2: full
+		voltage[5] = 4;    // 0-4 bat level
+		voltage[7] = 0;    // 0: not charging, 1: charging, 2: full
 		voltage[3] = 1000; // a/d value, 10bit, v_ref = 5v, ~3.42v
 		return 1;
 	}
@@ -383,14 +380,16 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 			// Mount factory partition
 			is_factory_mount = true;
 			std::cout << "    +FRP: factory partition mounted\n";
-			if (retlen) *retlen = 0;
+			if (retlen)
+				*retlen = 0;
 			return 1;
 
 		case 257:
 			// Unmount factory partition
 			is_factory_mount = false;
 			std::cout << "    +FRP: factory partition unmounted\n";
-			if (retlen) *retlen = 0;
+			if (retlen)
+				*retlen = 0;
 			return 1;
 
 		case 258: {
@@ -400,13 +399,16 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 
 			memset(out, 0, outlen);
 			if (!g_frp_data.empty()) {
-				uint32_t copy_len = std::min((uint32_t)outlen, (uint32_t)g_frp_data.size());
+				uint32_t copy_len =
+					std::min((uint32_t)outlen, (uint32_t)g_frp_data.size());
 				memcpy(out, g_frp_data.data(), copy_len);
-				if (retlen) *retlen = copy_len;
+				if (retlen)
+					*retlen = copy_len;
 			}
 			else {
 				// 未设置过 FRP，返回全 0（表示未锁定）
-				if (retlen) *retlen = outlen;
+				if (retlen)
+					*retlen = outlen;
 			}
 			return 1;
 		}
@@ -417,7 +419,8 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 			g_frp_data.resize(size);
 			memcpy(g_frp_data.data(), in, size);
 			frp_save();
-			if (retlen) *retlen = size;
+			if (retlen)
+				*retlen = size;
 			return 1;
 		}
 
@@ -426,18 +429,20 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 			std::cout << "    +FRP data erase!\n";
 			g_frp_data.clear();
 			std::remove(FRP_PERSIST_PATH);
-			if (retlen) *retlen = 0;
+			if (retlen)
+				*retlen = 0;
 			return 1;
 		}
 
 		default:
 			std::cout << "    +FRP: unknown request " << request << "\n";
-			if (out && outlen > 0) memset(out, 0, outlen);
-			if (retlen) *retlen = 0;
+			if (out && outlen > 0)
+				memset(out, 0, outlen);
+			if (retlen)
+				*retlen = 0;
 			return 1;
 		}
 	}
-
 
 	std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
 		<< " request:" << request << " size:" << size << "\n";

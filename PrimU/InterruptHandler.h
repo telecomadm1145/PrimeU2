@@ -7,7 +7,7 @@
 struct SystemServiceArguments
 {
 	SystemServiceArguments() = default;
-	SystemServiceArguments(uint32_t caller_pc) :caller_pc(caller_pc)
+	SystemServiceArguments(uc_engine* uc, uint32_t caller_pc) :caller_pc(caller_pc)
 	{
 		uc_arm_reg _regs[5] =
 		{
@@ -28,7 +28,7 @@ struct SystemServiceArguments
 			// &r4,
 			&sp
 		};
-		uc_reg_read_batch(sExecutor->GetUcInstance(), (int*)_regs, (void**)_args, 5);
+		uc_reg_read_batch(uc, (int*)_regs, (void**)_args, 5);
 	}
 	uint32_t r0{};
 	uint32_t r1{};

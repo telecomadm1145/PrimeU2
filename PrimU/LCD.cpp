@@ -1,29 +1,31 @@
 ﻿// LCD.cpp
 // --- Include your project header ---
 #include "LCD.h"
-#include "ui.h"
 #include "svclogwin.h"
+#include "ui.h"
+
 // --- Standard Library and Win32 Headers ---
-#include <windows.h>
-#include <thread>
 #include <atomic>
+#include <chrono>
 #include <map>
 #include <mutex>
-#include <chrono>
+#include <thread>
+#include <windows.h>
 
-#include <SDL.h>
-#include "imgui.h"
-#include "imgui_memory_editor.h"
-#include "imgui_impl_sdl2.h"
-#include "imgui_internal.h"
-#include "imgui_impl_sdlrenderer2.h"
+
 #include "PrimeObj.h"
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
+#include "imgui_internal.h"
+#include "imgui_memory_editor.h"
+#include <SDL.h>
 #include <functional>
-
 
 // --- Globals for Window Management ---
 // Since we cannot modify the LCD struct, we use a global map to associate
-// an LCD instance with its window thread and handle. A mutex ensures thread safety.
+// an LCD instance with its window thread and handle. A mutex ensures thread
+// safety.
 struct WindowInfo {
 	std::thread windowThread;
 	HWND windowHandle = nullptr;
@@ -38,70 +40,68 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void WindowThreadProc(LCD* lcd);
 std::map<int, int> vk_to_device_keymap = {
 	// === 标准功能键 ===
-	{ VK_ESCAPE,       0x01 }, // Esc
-	{ VK_LEFT,         0x02 }, // 左
-	{ VK_UP,           0x03 }, // 上
-	{ VK_RIGHT,        0x04 }, // 右
-	{ VK_DOWN,         0x05 }, // 下
-	{ VK_BACK,         0x0C }, // 退格
-	{ VK_RETURN,       0x0D }, // 回车
-	{ VK_SPACE,        0x20 }, // 空格
-	{ VK_SHIFT,        0x8B }, // Shift
+	{VK_ESCAPE, 0x01}, // Esc
+	{VK_LEFT, 0x02},   // 左
+	{VK_UP, 0x03},     // 上
+	{VK_RIGHT, 0x04},  // 右
+	{VK_DOWN, 0x05},   // 下
+	{VK_BACK, 0x0C},   // 退格
+	{VK_RETURN, 0x0D}, // 回车
+	{VK_SPACE, 0x20},  // 空格
+	{VK_SHIFT, 0x8B},  // Shift
 
 	// === 数字与符号键 ===
-	{ '0',             0x30 }, // 0
-	{ '1',             0x59 }, // 1
-	{ '2',             0x5A }, // 2
-	{ '3',             0x33 }, // 3
-	{ '4',             0x55 }, // 4
-	{ '5',             0x56 }, // 5
-	{ '6',             0x57 }, // 6
-	{ '7',             0x51 }, // 7
-	{ '8',             0x52 }, // 8
-	{ '9',             0x53 }, // 9
-	{ 'X',             0x44 }, // X
-	{ VK_OEM_COMMA,    0x4F }, // ,
-	{ VK_OEM_2,        0x54 }, // /
-	{ VK_MULTIPLY,     0x58 }, // *
-	{ VK_OEM_PERIOD,   0xB8 }, // .
-	{ VK_OEM_MINUS,	   0xB7 }, // +
-	{ VK_OEM_PLUS,     0xB9 }, // -
+	{'0', 0x30},           // 0
+	{'1', 0x59},           // 1
+	{'2', 0x5A},           // 2
+	{'3', 0x33},           // 3
+	{'4', 0x55},           // 4
+	{'5', 0x56},           // 5
+	{'6', 0x57},           // 6
+	{'7', 0x51},           // 7
+	{'8', 0x52},           // 8
+	{'9', 0x53},           // 9
+	{'X', 0x44},           // X
+	{VK_OEM_COMMA, 0x4F},  // ,
+	{VK_OEM_2, 0x54},      // /
+	{VK_MULTIPLY, 0x58},   // *
+	{VK_OEM_PERIOD, 0xB8}, // .
+	{VK_OEM_MINUS, 0xB7},  // +
+	{VK_OEM_PLUS, 0xB9},   // -
 
 	// === 特殊功能键 (映射自 QWERTY 布局) ===
-	{ 'Q',             0x41 }, // 变量
-	{ 'W',             0x42 }, // 工具箱
-	{ 'E',             0x43 }, // 数学模板
-	{ 'R',             0x45 }, // a b/c
-	{ 'T',             0x46 }, // ^
-	{ 'Y',             0x47 }, // SIN
-	{ 'U',             0x48 }, // COS
-	{ 'I',             0x49 }, // TAN
-	{ 'O',             0x4A }, // LN
-	{ 'P',             0x4B }, // LOG
-	{ 'A',             0x4C }, // ^2
-	{ 'S',             0x4D }, // +/-
-	{ 'D',             0x4E }, // ()
-	{ 'F',             0x50 }, // 1e
-	{ 'G',             0x83 }, // ON
-	{ 'H',             0x91 }, // 符号视图
-	{ 'J',             0x93 }, // 消息
-	{ 'K',             0xB2 }, // 绘图
-	{ 'L',             0xB3 }, // 数值
-	{ 'Z',             0xB4 }, // 视图
-	{ 'C',             0xB5 }, // CAS
-	{ 'V',             0xB6 }, // Alpha
-	{ 'N',             0x95 }, // 帮助
-	{ 'M',             0xB1 }, // 应用
-	{ 'B',             0xe047 }, // 应用
+	{'Q', 0x41},   // 变量
+	{'W', 0x42},   // 工具箱
+	{'E', 0x43},   // 数学模板
+	{'R', 0x45},   // a b/c
+	{'T', 0x46},   // ^
+	{'Y', 0x47},   // SIN
+	{'U', 0x48},   // COS
+	{'I', 0x49},   // TAN
+	{'O', 0x4A},   // LN
+	{'P', 0x4B},   // LOG
+	{'A', 0x4C},   // ^2
+	{'S', 0x4D},   // +/-
+	{'D', 0x4E},   // ()
+	{'F', 0x50},   // 1e
+	{'G', 0x83},   // ON
+	{'H', 0x91},   // 符号视图
+	{'J', 0x93},   // 消息
+	{'K', 0xB2},   // 绘图
+	{'L', 0xB3},   // 数值
+	{'Z', 0xB4},   // 视图
+	{'C', 0xB5},   // CAS
+	{'V', 0xB6},   // Alpha
+	{'N', 0x95},   // 帮助
+	{'M', 0xB1},   // 应用
+	{'B', 0xe047}, // 应用
 };
 
 // --- LCDHandler Implementation (from your code) ---
 
 LCDHandler* LCDHandler::_instance = nullptr;
 
-LCDHandler::LCDHandler() {
-	InitActiveLCD();
-}
+LCDHandler::LCDHandler() { InitActiveLCD(); }
 
 LCDHandler::~LCDHandler() {
 	if (_activeLCD) {
@@ -127,12 +127,14 @@ void LCDHandler::InitActiveLCD() {
 	if ((err = sMemoryManager->DyanmicAlloc(&_activeLCDPtr, 0x4)) != ERROR_OK)
 		__debugbreak();
 
-	*__GET(uint32_t*, _activeLCDPtr) = reinterpret_cast<uint32_t>(_activeLCD->LCDMagicPtr);
+	*__GET(uint32_t*, _activeLCDPtr) =
+		reinterpret_cast<uint32_t>(_activeLCD->LCDMagicPtr);
 }
 
 void LCDHandler::DeleteActiveLCD() {
 	if (_activeLCD) {
-		sMemoryManager->DynamicFree(sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(_activeLCD)));
+		sMemoryManager->DynamicFree(
+			sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(_activeLCD)));
 		_activeLCD = nullptr;
 	}
 	if (_activeLCDPtr) {
@@ -141,9 +143,7 @@ void LCDHandler::DeleteActiveLCD() {
 	}
 }
 
-VirtPtr LCDHandler::GetActiveLCDPtr() const {
-	return _activeLCDPtr;
-}
+VirtPtr LCDHandler::GetActiveLCDPtr() const { return _activeLCDPtr; }
 
 // --- LCD Constructor & Destructor Implementation ---
 struct BlockLog {
@@ -151,14 +151,14 @@ struct BlockLog {
 	int id;
 };
 extern RollingLogBuffer<BlockLog> block_log;
+RollingLogBuffer<BlockLog> block_log;
 
 inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
-	bool* p_open = nullptr)
-{
-	static bool  autoScroll = true;
-	static bool  showDec = false;
-	static char  filterText[64] = "";
-	static int   displayMode = 0;  // 0=Hex, 1=Dec, 2=Both
+	bool* p_open = nullptr) {
+	static bool autoScroll = true;
+	static bool showDec = false;
+	static char filterText[64] = "";
+	static int displayMode = 0; // 0=Hex, 1=Dec, 2=Both
 
 	ImGui::SetNextWindowSize(ImVec2(420, 500), ImGuiCond_FirstUseEver);
 	if (!ImGui::Begin("Block Log", p_open, ImGuiWindowFlags_MenuBar)) {
@@ -179,8 +179,7 @@ inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
 				auto snap = logBuffer.snapshot();
 				char buf[64];
 				for (size_t i = 0; i < snap.size(); ++i) {
-					snprintf(buf, sizeof(buf), "%zu: 0x%08X (%u)\n",
-						i, snap[i], snap[i]);
+					snprintf(buf, sizeof(buf), "%zu: 0x%08X (%u)\n", i, snap[i], snap[i]);
 					clip += buf;
 				}
 				ImGui::SetClipboardText(clip.c_str());
@@ -192,9 +191,11 @@ inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
 
 	// ---- 工具栏 ----
 	ImGui::SetNextItemWidth(180);
-	ImGui::InputTextWithHint("##filter", "Filter 0x...", filterText, IM_ARRAYSIZE(filterText));
+	ImGui::InputTextWithHint("##filter", "Filter 0x...", filterText,
+		IM_ARRAYSIZE(filterText));
 	ImGui::SameLine();
-	if (ImGui::Button("X##clr")) filterText[0] = '\0';
+	if (ImGui::Button("X##clr"))
+		filterText[0] = '\0';
 	ImGui::SameLine();
 	ImGui::Text("  %zu / %zu", logBuffer.size(), logBuffer.capacity());
 
@@ -207,7 +208,8 @@ inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
 	if (hasFilter) {
 		char* endp = nullptr;
 		std::string fs(filterText);
-		for (auto& c : fs) c = (char)tolower((unsigned char)c);
+		for (auto& c : fs)
+			c = (char)tolower((unsigned char)c);
 		unsigned long v;
 		if (fs.size() > 2 && fs[0] == '0' && fs[1] == 'x')
 			v = strtoul(fs.c_str(), &endp, 16);
@@ -220,15 +222,14 @@ inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
 	}
 
 	// ---- 表格 ----
-	ImGuiTableFlags flags =
-		ImGuiTableFlags_ScrollY |
-		ImGuiTableFlags_RowBg |
+	ImGuiTableFlags flags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
 		ImGuiTableFlags_BordersOuter |
 		ImGuiTableFlags_BordersInnerV |
 		ImGuiTableFlags_SizingFixedFit;
 
 	int cols = 3; // # | Value
-	if (displayMode == 2) cols = 3; // # | Hex | Dec
+	if (displayMode == 2)
+		cols = 3; // # | Hex | Dec
 
 	if (ImGui::BeginTable("##block_tbl", cols, flags)) {
 		ImGui::TableSetupScrollFreeze(0, 1);
@@ -238,7 +239,8 @@ inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
 			ImGui::TableSetupColumn("Dec", ImGuiTableColumnFlags_WidthStretch);
 		}
 		else {
-			ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed, 200.0f);
+			ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthFixed,
+				200.0f);
 			ImGui::TableSetupColumn("ThreadId", ImGuiTableColumnFlags_WidthStretch);
 		}
 		ImGui::TableHeadersRow();
@@ -292,14 +294,18 @@ LCD::LCD() {
 	LcdMagic.SomeVal = 0x5850;
 	LcdMagic.x_res = 320;
 	LcdMagic.y_res = 240;
-	LcdMagic.pixel_bits = 32; // Using 32-bit color for easier rendering with Win32
+	LcdMagic.pixel_bits =
+		32; // Using 32-bit color for easier rendering with Win32
 	LcdMagic.unk2_640 = 640;
 	LcdMagic.brightness_level = 2;
 	LcdMagic.unk1_0 = 8;
-	LcdMagic.window1_bufferstart = sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(&buffer));
+	LcdMagic.window1_bufferstart =
+		sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(&buffer));
 
-	LCDMagicPtr = reinterpret_cast<LCD_MAGIC*>(sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(&LcdMagic)));
-	itself = reinterpret_cast<LCD*>(sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(this)));
+	LCDMagicPtr = reinterpret_cast<LCD_MAGIC*>(
+		sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(&LcdMagic)));
+	itself = reinterpret_cast<LCD*>(
+		sMemoryManager->GetVirtualAddr(reinterpret_cast<RealPtr>(this)));
 
 	// Initialize buffer to black (ARGB format)
 	for (int i = 0; i < 320 * 240; i++) {
@@ -318,7 +324,9 @@ LCD::LCD() {
 			bool busy = false;
 			bool running = true;
 			auto frame_event = SDL_RegisterEvents(1);
-			auto win = SDL_CreateWindow("Hex editor", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1200, 900, SDL_WINDOW_RESIZABLE);
+			auto win = SDL_CreateWindow("Hex editor", SDL_WINDOWPOS_UNDEFINED,
+				SDL_WINDOWPOS_UNDEFINED, 1200, 900,
+				SDL_WINDOW_RESIZABLE);
 			auto renderer = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
 			IMGUI_CHECKVERSION();
 			ImGui::CreateContext();
@@ -366,12 +374,20 @@ LCD::LCD() {
 					ImGui_ImplSDLRenderer2_NewFrame();
 					ImGui_ImplSDL2_NewFrame();
 					ImGui::NewFrame();
-					ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
-					ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver); // TODO: ????????
-					me.DrawWindow("Editor", (void*)0x20'00'00'00, 0x20'00'00'00, 0x20'00'00'00);
-					ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver);
+					ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(),
+						ImGuiDockNodeFlags_PassthruCentralNode);
+					ImGui::SetNextWindowDockID(
+						ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+						ImGuiCond_FirstUseEver); // TODO: ????????
+					me.DrawWindow("Editor", (void*)0x20'00'00'00, 0x20'00'00'00,
+						0x20'00'00'00);
+					ImGui::SetNextWindowDockID(
+						ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+						ImGuiCond_FirstUseEver);
 					DrawSVCLogWindow(g_svcCallLog);
-					ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver);
+					ImGui::SetNextWindowDockID(
+						ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+						ImGuiCond_FirstUseEver);
 					DrawBlockLogWindow(block_log);
 					// ===== Desktop Component Explorer =====
 					{
@@ -380,7 +396,7 @@ LCD::LCD() {
 						static char filter_buf[256] = "";
 						static char search_buf[256] = "";
 						static std::vector<CComponent*> search_results;
-						static int  hex_size = 0x80;
+						static int hex_size = 0x80;
 						static bool show_hex = false;
 						static MemoryEditor comp_mem;
 						static bool comp_mem_init = false;
@@ -392,10 +408,16 @@ LCD::LCD() {
 
 						// ── 工具函数 ──
 						auto TypeName = [](CComponent* c) -> const char* {
-							if (!c) return "<null>";
-							auto* v = c->vtbl();      if (!v) return "<?>";
-							auto* r = v->rtti_info(); if (!r) return "<?>";
-							auto* n = r->name();     return n ? n : "<?>";
+							if (!c)
+								return "<null>";
+							auto* v = c->vtbl();
+							if (!v)
+								return "<?>";
+							auto* r = v->rtti_info();
+							if (!r)
+								return "<?>";
+							auto* n = r->name();
+							return n ? n : "<?>";
 							};
 
 						auto VA = [](const void* p) -> uint32_t {
@@ -411,26 +433,30 @@ LCD::LCD() {
 						// ╚══════════════════════════════════════════╝
 						std::function<void(CComponent*, int)> DrawNode;
 						DrawNode = [&](CComponent* n, int depth) {
-							if (!n || depth > 64) return;
+							if (!n || depth > 64)
+								return;
 
 							const char* tn = TypeName(n);
-							uint32_t    va = VA(n);
-							bool        leaf = n->empty();
-							bool        hit = filter_buf[0] && strstr(tn, filter_buf);
+							uint32_t va = VA(n);
+							bool leaf = n->empty();
+							bool hit = filter_buf[0] && strstr(tn, filter_buf);
 
-							ImGuiTreeNodeFlags flags =
-								ImGuiTreeNodeFlags_OpenOnArrow |
+							ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
 								ImGuiTreeNodeFlags_SpanAvailWidth;
-							if (leaf)     flags |= ImGuiTreeNodeFlags_Leaf |
+							if (leaf)
+								flags |= ImGuiTreeNodeFlags_Leaf |
 								ImGuiTreeNodeFlags_NoTreePushOnOpen;
-							if (sel == n) flags |= ImGuiTreeNodeFlags_Selected;
+							if (sel == n)
+								flags |= ImGuiTreeNodeFlags_Selected;
 
 							ImGui::PushID((int)va);
 
-							if (hit) ImGui::PushStyleColor(ImGuiCol_Text, { 1, 1, .2f, 1 });
-							bool open = ImGui::TreeNodeEx("##n", flags,
-								"%s  [%08X]  (%d)", tn, va, (int)n->child_count);
-							if (hit) ImGui::PopStyleColor();
+							if (hit)
+								ImGui::PushStyleColor(ImGuiCol_Text, { 1, 1, .2f, 1 });
+							bool open = ImGui::TreeNodeEx("##n", flags, "%s  [%08X]  (%d)",
+								tn, va, (int)n->child_count);
+							if (hit)
+								ImGui::PopStyleColor();
 
 							if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
 								sel = n;
@@ -439,12 +465,15 @@ LCD::LCD() {
 							if (ImGui::BeginPopupContextItem()) {
 								ImGui::TextDisabled("%s @ 0x%08X", tn, va);
 								ImGui::Separator();
-								if (ImGui::MenuItem("Select"))         sel = n;
+								if (ImGui::MenuItem("Select"))
+									sel = n;
 								if (ImGui::MenuItem("Copy Address")) {
-									char b[16]; snprintf(b, 16, "0x%08X", va);
+									char b[16];
+									snprintf(b, 16, "0x%08X", va);
 									ImGui::SetClipboardText(b);
 								}
-								if (ImGui::MenuItem("Copy Type Name")) ImGui::SetClipboardText(tn);
+								if (ImGui::MenuItem("Copy Type Name"))
+									ImGui::SetClipboardText(tn);
 								if (ImGui::MenuItem("Goto Hex Editor"))
 									me.GotoAddrAndHighlight((ImU64)va, (ImU64)va + 0x26);
 								ImGui::Separator();
@@ -452,8 +481,12 @@ LCD::LCD() {
 								if (ImGui::MenuItem("Remove", nullptr, false, can_rm)) {
 									auto* p = n->get_parent();
 									for (auto it = p->begin(); it != p->end(); ++it)
-										if (&*it == n) { p->erase(it); break; }
-									if (sel == n) sel = nullptr;
+										if (&*it == n) {
+											p->erase(it);
+											break;
+										}
+									if (sel == n)
+										sel = nullptr;
 								}
 								ImGui::EndPopup();
 							}
@@ -472,14 +505,17 @@ LCD::LCD() {
 							}
 							ImGui::PopID();
 							};
-						ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver);
+						ImGui::SetNextWindowDockID(
+							ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+							ImGuiCond_FirstUseEver);
 						ImGui::Begin("Component Tree");
 						{
 							ImGui::SetNextItemWidth(-50);
-							ImGui::InputTextWithHint("##flt", "Highlight...",
-								filter_buf, sizeof(filter_buf));
+							ImGui::InputTextWithHint("##flt", "Highlight...", filter_buf,
+								sizeof(filter_buf));
 							ImGui::SameLine();
-							if (ImGui::SmallButton("X##f")) filter_buf[0] = 0;
+							if (ImGui::SmallButton("X##f"))
+								filter_buf[0] = 0;
 							ImGui::Separator();
 
 							if (desktop) {
@@ -493,14 +529,16 @@ LCD::LCD() {
 							}
 						}
 						ImGui::End();
-						ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver);
+						ImGui::SetNextWindowDockID(
+							ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+							ImGuiCond_FirstUseEver);
 						// ╔══════════════════════════════════════════╗
 						// ║        Component Properties 窗口         ║
 						// ╚══════════════════════════════════════════╝
 						ImGui::Begin("Component Properties");
 						if (sel) {
 							const char* tn = TypeName(sel);
-							uint32_t    va = VA(sel);
+							uint32_t va = VA(sel);
 
 							ImGui::TextColored({ .4f, .85f, 1, 1 }, "%s", tn);
 							ImGui::SameLine();
@@ -511,10 +549,9 @@ LCD::LCD() {
 							if (ImGui::BeginTable("##props", 2,
 								ImGuiTableFlags_Borders |
 								ImGuiTableFlags_RowBg |
-								ImGuiTableFlags_SizingStretchProp))
-							{
-								ImGui::TableSetupColumn("Field",
-									ImGuiTableColumnFlags_WidthFixed, 110.f);
+								ImGuiTableFlags_SizingStretchProp)) {
+								ImGui::TableSetupColumn(
+									"Field", ImGuiTableColumnFlags_WidthFixed, 110.f);
 								ImGui::TableSetupColumn("Value");
 								ImGui::TableHeadersRow();
 
@@ -525,41 +562,48 @@ LCD::LCD() {
 									ImGui::TableSetColumnIndex(1);
 									};
 
-								Row("Address");   ImGui::Text("0x%08X", va);
-								Row("VTable");    ImGui::Text("0x%08X", VA(sel->vtbl()));
-								Row("Type");      ImGui::TextUnformatted(tn);
-								Row("Children");  ImGui::Text("%d", (int)sel->child_count);
+								Row("Address");
+								ImGui::Text("0x%08X", va);
+								Row("VTable");
+								ImGui::Text("0x%08X", VA(sel->vtbl()));
+								Row("Type");
+								ImGui::TextUnformatted(tn);
+								Row("Children");
+								ImGui::Text("%d", (int)sel->child_count);
 
 								// Parent
 								auto* par = sel->get_parent();
 								Row("Parent");
 								if (par) {
 									ImGui::Text("%s [%08X]", TypeName(par), VA(par));
-									if (ImGui::IsItemClicked()) sel = par;
+									if (ImGui::IsItemClicked())
+										sel = par;
 								}
 								else {
 									ImGui::TextDisabled("<none>");
 								}
 
 								//// Prev Sibling
-								//auto* ps = sel->prev_sibling
+								// auto* ps = sel->prev_sibling
 								//	? __GET(CComponent*, sel->prev_sibling) : nullptr;
-								//Row("Prev Sibling");
-								//if (ps) {
+								// Row("Prev Sibling");
+								// if (ps) {
 								//	ImGui::Text("%s [%08X]", TypeName(ps), VA(ps));
 								//	if (ImGui::IsItemClicked()) sel = ps;
-								//}
-								//else {
+								// }
+								// else {
 								//	ImGui::TextDisabled("<none>");
-								//}
+								// }
 
 								// Next Sibling
 								auto* ns = sel->next_sibling
-									? __GET(CComponent*, sel->next_sibling) : nullptr;
+									? __GET(CComponent*, sel->next_sibling)
+									: nullptr;
 								Row("Next Sibling");
 								if (ns) {
 									ImGui::Text("%s [%08X]", TypeName(ns), VA(ns));
-									if (ImGui::IsItemClicked()) sel = ns;
+									if (ImGui::IsItemClicked())
+										sel = ns;
 								}
 								else {
 									ImGui::TextDisabled("<none>");
@@ -567,11 +611,13 @@ LCD::LCD() {
 
 								// First Child
 								auto* fc = sel->first_child
-									? __GET(CComponent*, sel->first_child) : nullptr;
+									? __GET(CComponent*, sel->first_child)
+									: nullptr;
 								Row("First Child");
 								if (fc) {
 									ImGui::Text("%s [%08X]", TypeName(fc), VA(fc));
-									if (ImGui::IsItemClicked()) sel = fc;
+									if (ImGui::IsItemClicked())
+										sel = fc;
 								}
 								else {
 									ImGui::TextDisabled("<none>");
@@ -584,9 +630,9 @@ LCD::LCD() {
 										char lbl[32];
 										snprintf(lbl, sizeof(lbl), "Base[%zu]", i);
 										Row(lbl);
-										ImGui::Text("%s",
-											(bases[i] && bases[i]->name())
-											? bases[i]->name() : "?");
+										ImGui::Text("%s", (bases[i] && bases[i]->name())
+											? bases[i]->name()
+											: "?");
 									}
 								}
 
@@ -600,12 +646,12 @@ LCD::LCD() {
 								ImGui::BeginChild("##ch_list", ImVec2(0, 150), true);
 								int idx = 0;
 								for (auto& ch : *sel) {
-									if (idx > 500) break;
+									if (idx > 500)
+										break;
 									uint32_t cva = VA(&ch);
 									char lbl[256];
-									snprintf(lbl, sizeof(lbl),
-										"[%d] %s  [%08X]##c%d",
-										idx, TypeName(&ch), cva, idx);
+									snprintf(lbl, sizeof(lbl), "[%d] %s  [%08X]##c%d", idx,
+										TypeName(&ch), cva, idx);
 									if (ImGui::Selectable(lbl))
 										sel = &ch;
 									idx++;
@@ -619,30 +665,36 @@ LCD::LCD() {
 								bool hp = sel->get_parent() != nullptr;
 								bool hc = (bool)sel->first_child;
 								bool hn = (bool)sel->next_sibling;
-								//bool hv = (bool)sel->prev_sibling;
+								// bool hv = (bool)sel->prev_sibling;
 
-								if (!hp) ImGui::BeginDisabled();
+								if (!hp)
+									ImGui::BeginDisabled();
 								if (ImGui::Button("Parent"))
 									sel = sel->get_parent();
-								if (!hp) ImGui::EndDisabled();
+								if (!hp)
+									ImGui::EndDisabled();
 
 								ImGui::SameLine();
-								if (!hc) ImGui::BeginDisabled();
+								if (!hc)
+									ImGui::BeginDisabled();
 								if (ImGui::Button("Child"))
 									sel = __GET(CComponent*, sel->first_child);
-								if (!hc) ImGui::EndDisabled();
+								if (!hc)
+									ImGui::EndDisabled();
 
-								//ImGui::SameLine();
-								//if (!hv) ImGui::BeginDisabled();
-								//if (ImGui::Button("<< Prev"))
+								// ImGui::SameLine();
+								// if (!hv) ImGui::BeginDisabled();
+								// if (ImGui::Button("<< Prev"))
 								//	sel = __GET(CComponent*, sel->prev_sibling);
-								//if (!hv) ImGui::EndDisabled();
+								// if (!hv) ImGui::EndDisabled();
 
 								ImGui::SameLine();
-								if (!hn) ImGui::BeginDisabled();
+								if (!hn)
+									ImGui::BeginDisabled();
 								if (ImGui::Button("Next >>"))
 									sel = __GET(CComponent*, sel->next_sibling);
-								if (!hn) ImGui::EndDisabled();
+								if (!hn)
+									ImGui::EndDisabled();
 
 								ImGui::SameLine();
 								if (ImGui::Button("Hex Editor"))
@@ -653,14 +705,19 @@ LCD::LCD() {
 							ImGui::Separator();
 							{
 								bool can_rm = sel != desktop && sel->get_parent();
-								if (!can_rm) ImGui::BeginDisabled();
+								if (!can_rm)
+									ImGui::BeginDisabled();
 								if (ImGui::Button("Remove from Parent")) {
 									auto* p = sel->get_parent();
 									for (auto it = p->begin(); it != p->end(); ++it)
-										if (&*it == sel) { p->erase(it); break; }
+										if (&*it == sel) {
+											p->erase(it);
+											break;
+										}
 									sel = p;
 								}
-								if (!can_rm) ImGui::EndDisabled();
+								if (!can_rm)
+									ImGui::EndDisabled();
 							}
 
 							// ── 内嵌 Hex 视图 ──
@@ -669,8 +726,8 @@ LCD::LCD() {
 							if (show_hex) {
 								ImGui::SliderInt("Bytes", &hex_size, 0x10, 0x400);
 								ImGui::BeginChild("##raw_hex", ImVec2(0, 300), true);
-								comp_mem.DrawContents(
-									(void*)(uintptr_t)va, (size_t)hex_size, (size_t)va);
+								comp_mem.DrawContents((void*)(uintptr_t)va, (size_t)hex_size,
+									(size_t)va);
 								ImGui::EndChild();
 							}
 						}
@@ -680,15 +737,17 @@ LCD::LCD() {
 								"Click a node in the Component Tree window to inspect it.");
 						}
 						ImGui::End();
-						ImGui::SetNextWindowDockID(ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key, ImGuiCond_FirstUseEver);
+						ImGui::SetNextWindowDockID(
+							ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+							ImGuiCond_FirstUseEver);
 						// ╔══════════════════════════════════════════╗
 						// ║        Component Search 窗口             ║
 						// ╚══════════════════════════════════════════╝
 						ImGui::Begin("Component Search");
 						{
 							ImGui::SetNextItemWidth(-120);
-							ImGui::InputTextWithHint("##sb", "Type name...",
-								search_buf, sizeof(search_buf));
+							ImGui::InputTextWithHint("##sb", "Type name...", search_buf,
+								sizeof(search_buf));
 							ImGui::SameLine();
 
 							if (ImGui::Button("Search") && desktop && search_buf[0]) {
@@ -721,37 +780,38 @@ LCD::LCD() {
 							ImGuiListClipper clipper;
 							clipper.Begin((int)search_results.size());
 							while (clipper.Step()) {
-								for (int i = clipper.DisplayStart;
-									i < clipper.DisplayEnd; i++)
-								{
+								for (int i = clipper.DisplayStart; i < clipper.DisplayEnd;
+									i++) {
 									auto* c = search_results[i];
 									uint32_t cva = VA(c);
 									char lbl[256];
-									snprintf(lbl, sizeof(lbl),
-										"%s  [%08X]##r%d", TypeName(c), cva, i);
+									snprintf(lbl, sizeof(lbl), "%s  [%08X]##r%d", TypeName(c),
+										cva, i);
 
 									if (ImGui::Selectable(lbl, c == sel))
 										sel = c;
 
 									// 右键可直接删除搜索结果中的组件
 									if (ImGui::BeginPopupContextItem()) {
-										if (ImGui::MenuItem("Select"))  sel = c;
+										if (ImGui::MenuItem("Select"))
+											sel = c;
 										if (ImGui::MenuItem("Copy Address")) {
-											char b[16]; snprintf(b, 16, "0x%08X", cva);
+											char b[16];
+											snprintf(b, 16, "0x%08X", cva);
 											ImGui::SetClipboardText(b);
 										}
 										if (ImGui::MenuItem("Remove from Parent")) {
 											auto* p = c->get_parent();
 											if (p) {
-												for (auto it = p->begin();
-													it != p->end(); ++it)
+												for (auto it = p->begin(); it != p->end(); ++it)
 													if (&*it == c) {
-														p->erase(it); break;
+														p->erase(it);
+														break;
 													}
 											}
-											if (sel == c) sel = nullptr;
-											search_results.erase(
-												search_results.begin() + i);
+											if (sel == c)
+												sel = nullptr;
+											search_results.erase(search_results.begin() + i);
 										}
 										ImGui::EndPopup();
 									}
@@ -798,7 +858,8 @@ LCD::~LCD() {
 			it->second.isExiting = true;
 			hwndToClose = it->second.windowHandle;
 
-			// Move the thread handle out of the map so we can join it outside the lock
+			// Move the thread handle out of the map so we can join it outside the
+			// lock
 			deadThread = std::move(it->second.windowThread);
 
 			g_LcdWindowMap.erase(it);
@@ -826,23 +887,22 @@ void WindowThreadProc(LCD* lcd) {
 	wc.hInstance = GetModuleHandle(NULL);
 	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 	wc.lpszClassName = L"EmulatedLcdClass";
-	if (!RegisterClassEx(&wc)) return;
+	if (!RegisterClassEx(&wc))
+		return;
 
 	// Adjust window size to account for title bar and borders
 	RECT wr = { 0, 0, (LONG)lcd->xRes, (LONG)lcd->yRes };
 	AdjustWindowRect(&wr, WS_OVERLAPPEDWINDOW, FALSE);
 
-	HWND hwnd = CreateWindowEx(
-		0,
-		L"EmulatedLcdClass",
-		L"LCD Display",
-		WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, CW_USEDEFAULT, wr.right - wr.left, wr.bottom - wr.top,
-		NULL, NULL, GetModuleHandle(NULL),
+	HWND hwnd = CreateWindowEx(0, L"EmulatedLcdClass", L"LCD Display",
+		WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+		wr.right - wr.left, wr.bottom - wr.top, NULL, NULL,
+		GetModuleHandle(NULL),
 		lcd // Pass the LCD pointer to WM_CREATE
 	);
 
-	if (!hwnd) return;
+	if (!hwnd)
+		return;
 
 	// Store the handle in the global map
 	{
@@ -879,6 +939,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		CREATESTRUCT* pCreate = (CREATESTRUCT*)lParam;
 		lcd = (LCD*)pCreate->lpCreateParams;
 		SetWindowLongPtr(hwnd, GWLP_USERDATA, (LONG_PTR)lcd);
+		*__GET(uint32_t*, 0x51000040) = -1; // Reset the timer tick count
 		return 0;
 	}
 
@@ -886,9 +947,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		// Trigger a repaint to update the screen
 		// 触发重绘以更新屏幕
 		InvalidateRect(hwnd, NULL, FALSE);
-		static int i = 0;
+		(*__GET(uint32_t*, 0x51000040)) -= 10000 / 60;
+		static int i = 0, j = 0;
 		if (i++ > 10)
 			EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_SYS_TIMER), i = 0;
+		//if (j++ > 60)
+		//	EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_INDICATOR_TIMER), j = 0;
 		return 0;
 	}
 
@@ -914,7 +978,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			};
 
 			for (int i = 0; i < lcd->xRes * lcd->yRes; i++) {
-				RGB555 pixel = *reinterpret_cast<RGB555*>(&((uint8_t*)lcd->buffer)[i * 4]);
+				RGB555 pixel =
+					*reinterpret_cast<RGB555*>(&((uint8_t*)lcd->buffer)[i * 4]);
 
 				// 扩展 5 位到 8 位
 				uint8_t r = pixel.r;
@@ -937,7 +1002,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			bi.bmiHeader.biPlanes = 1;
 			bi.bmiHeader.biBitCount = 32;
 			bi.bmiHeader.biCompression = BI_RGB;
-			StretchDIBits(hdc, 0, 0, lcd->xRes, lcd->yRes, 0, 0, lcd->xRes, lcd->yRes, tempBuffer, &bi, DIB_RGB_COLORS, SRCCOPY);
+			StretchDIBits(hdc, 0, 0, lcd->xRes, lcd->yRes, 0, 0, lcd->xRes, lcd->yRes,
+				tempBuffer, &bi, DIB_RGB_COLORS, SRCCOPY);
 			delete[] tempBuffer;
 		}
 
@@ -959,14 +1025,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			vk_to_device_keymap[VK_NUMPAD8] = '8';
 			vk_to_device_keymap[VK_NUMPAD9] = '9';
 			// --- 运算符 ---
-			//vk_to_device_keymap[VK_MULTIPLY] = '*';
+			// vk_to_device_keymap[VK_MULTIPLY] = '*';
 			/*
-				{ VK_OEM_COMMA,    0x4F }, // ,
-	{ VK_OEM_2,        0x54 }, // /
-	{ VK_MULTIPLY,     0x58 }, // *
-	{ VK_OEM_PERIOD,   0xB8 }, // .
-	{ VK_OEM_MINUS,	   0xB7 }, // +
-	{ VK_OEM_PLUS,     0xB9 }, // -
+					{ VK_OEM_COMMA,    0x4F }, // ,
+	  { VK_OEM_2,        0x54 }, // /
+	  { VK_MULTIPLY,     0x58 }, // *
+	  { VK_OEM_PERIOD,   0xB8 }, // .
+	  { VK_OEM_MINUS,	   0xB7 }, // +
+	  { VK_OEM_PLUS,     0xB9 }, // -
 			*/
 			vk_to_device_keymap[107] = VK_OEM_PLUS;
 			vk_to_device_keymap[109] = VK_OEM_MINUS;
@@ -1006,14 +1072,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			vk_to_device_keymap[VK_NUMPAD8] = '8';
 			vk_to_device_keymap[VK_NUMPAD9] = '9';
 			// --- 运算符 ---
-			//vk_to_device_keymap[VK_MULTIPLY] = '*';
+			// vk_to_device_keymap[VK_MULTIPLY] = '*';
 			/*
-				{ VK_OEM_COMMA,    0x4F }, // ,
-	{ VK_OEM_2,        0x54 }, // /
-	{ VK_MULTIPLY,     0x58 }, // *
-	{ VK_OEM_PERIOD,   0xB8 }, // .
-	{ VK_OEM_MINUS,	   0xB7 }, // +
-	{ VK_OEM_PLUS,     0xB9 }, // -
+					{ VK_OEM_COMMA,    0x4F }, // ,
+	  { VK_OEM_2,        0x54 }, // /
+	  { VK_MULTIPLY,     0x58 }, // *
+	  { VK_OEM_PERIOD,   0xB8 }, // .
+	  { VK_OEM_MINUS,	   0xB7 }, // +
+	  { VK_OEM_PLUS,     0xB9 }, // -
 			*/
 			vk_to_device_keymap[107] = VK_OEM_PLUS;
 			vk_to_device_keymap[109] = VK_OEM_MINUS;
@@ -1046,13 +1112,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		{
 			auto x = LOWORD(lParam);
 			auto y = HIWORD(lParam);
-			//UIMultipressEvent uime{};
-			//uime.touch_x = static_cast<uint16_t>(x);
-			//uime.touch_y = static_cast<uint16_t>(y);
-			//uime.status = UI_EVENT_TYPE_TOUCH_BEGIN;
+			// UIMultipressEvent uime{};
+			// uime.touch_x = static_cast<uint16_t>(x);
+			// uime.touch_y = static_cast<uint16_t>(y);
+			// uime.status = UI_EVENT_TYPE_TOUCH_BEGIN;
 			TouchUpdate(x, y, 0, UI_EVENT_TYPE_TOUCH_BEGIN);
 		}
-		is_lbtn_down = true; break;
+		is_lbtn_down = true;
+		break;
 	}
 	case WM_LBUTTONUP: {
 		{
@@ -1060,7 +1127,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			auto y = HIWORD(lParam);
 			TouchUpdate(x, y, 0, UI_EVENT_TYPE_TOUCH_END);
 		}
-		is_lbtn_down = false; break;
+		is_lbtn_down = false;
+		break;
 	}
 	case WM_MOUSEMOVE: {
 		if (is_lbtn_down) {

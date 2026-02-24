@@ -1,61 +1,63 @@
 ﻿#ifndef EXECUTOR_H
 #define EXECUTOR_H
 
-#include  "stdafx.h"
-#include  <unicorn/unicorn.h>
+#include "MemoryManager.h"
 #include "executable.h"
 #include "memory.h"
-#include "MemoryManager.h"
+#include "stdafx.h"
+#include <unicorn/unicorn.h>
 
 enum InterruptID : uint32_t;
 
 class Thread;
 struct InterruptHandle;
 
-class Executor
-{
+void interrupt_hook(uc_engine *uc, uint64_t address, uint32_t size,
+                    void *user_data);
+
+class Executor {
 public:
-    static Executor* get_instance() { return (!m_instance) ? m_instance = new Executor : m_instance; }
-    ~Executor() { delete m_instance; }
+  static Executor *get_instance() {
+    return (!m_instance) ? m_instance = new Executor : m_instance;
+  }
+  ~Executor() { delete m_instance; }
 
-    bool Initialize(Executable* exec);
-    void Execute();
-    bool Cleanup();
+  bool Initialize(Executable *exec);
+  void Execute();
+  bool Cleanup();
 
-    uc_err GetLastError() { return m_err; }
-    uc_engine* GetUcInstance() { return m_uc; }
+  void RegisterHooksForEngine(uc_engine *uc);
 
-    friend void interrupt_hook(uc_engine *uc, uint64_t address, uint32_t size, void *user_data);
+  uc_err GetLastError() { return m_err; }
+  uc_engine *GetUcInstance() { return m_uc; }
+
+  friend void ::interrupt_hook(uc_engine *uc, uint64_t address, uint32_t size,
+                               void *user_data);
 
 private:
-    Executor() : m_uc(nullptr)
-    {
-    }
-    bool InitInterrupts();
+  Executor() : m_uc(nullptr) {}
+  bool InitInterrupts();
 
-    static Executor* m_instance;
-    uc_engine* m_uc;
-    uc_hook m_interrupt_hook, _codeHook, _codeHook2;
-    uc_err m_err;
+  static Executor *m_instance;
+  uc_engine *m_uc;
+  uc_hook m_interrupt_hook;
+  uc_err m_err;
 
-    Executable* m_exec;
-    Memory* m_stack;
-    uint32_t m_sp;
+  Executable *m_exec;
+  Memory *m_stack;
+  uint32_t m_sp;
 
-    Memory* m_dynamic;
-    Memory* m_LCD;
-
-
+  Memory *m_dynamic;
+  Memory *m_LCD;
 
 public:
-    Executor(Executor const&) = delete;
-    void operator=(Executor const&) = delete;
+  Executor(Executor const &) = delete;
+  void operator=(Executor const &) = delete;
 
 private:
-    std::map<InterruptID, InterruptHandle*> m_interrupts;
+  std::map<InterruptID, InterruptHandle *> m_interrupts;
 };
 
 #define sExecutor Executor::get_instance()
 
 #endif
-

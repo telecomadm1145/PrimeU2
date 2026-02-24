@@ -654,7 +654,7 @@ inline void DrawSVCLogWindow(RollingLogBuffer<SVCCallRecord>& logBuffer, bool* p
 		const auto& dataToRender = pauseUpdate ? frozenSnapshot : logBuffer.snapshot();
 
 		if (!dataToRender.empty()) {
-			std::chrono::steady_clock::time_point baseTime = dataToRender[0].timestamp;
+			static std::chrono::steady_clock::time_point baseTime = dataToRender[0].timestamp;
 
 			// ¹ýÂËÆ¥ÅäÂß¼­
 			bool hasFilter = (filterText[0] != '\0');
