@@ -362,9 +362,9 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 	if (g_vdev_table[handle].ends_with("BAT")) {
 		auto voltage = (uint16_t*)out;
 		memset(voltage, 0, outlen);
-		voltage[5] = 2;     // 0-4 bat level
+		voltage[5] = 4;     // 0-4 bat level
 		voltage[7] = 0;     // 0: not charging, 1: charging, 2: full
-		voltage[3] = 0x36e; // a/d value, ~3.42v
+		voltage[3] = 1000; // a/d value, 10bit, v_ref = 5v, ~3.42v
 		return 1;
 	}
 

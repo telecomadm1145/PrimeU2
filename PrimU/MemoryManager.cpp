@@ -83,7 +83,7 @@ bool MemoryManager::OverlapsAnyMappedBlock(VirtPtr addr, size_t size) const
 	}
 	return false;
 }
-
+__declspec(noinline)
 ErrorCode MemoryManager::StaticAlloc(VirtPtr addr, size_t size, MemoryBlock** memoryBlock, int prot)
 {
 	if (size == 0) {

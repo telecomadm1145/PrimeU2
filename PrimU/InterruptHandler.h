@@ -6,6 +6,7 @@
 
 struct SystemServiceArguments
 {
+	SystemServiceArguments() = default;
 	SystemServiceArguments(uint32_t caller_pc) :caller_pc(caller_pc)
 	{
 		uc_arm_reg _regs[5] =

@@ -370,8 +370,8 @@ uint32_t VFileSystem::seek(uint32_t handle, size_t offset, int whence) {
   if (it == m_files.end() || !it->second.fp)
     return (uint32_t)-1;
 
-  _fseeki64(it->second.fp, (long long)offset, whence);
-  return 0;
+  
+  return _fseeki64(it->second.fp, (long long)offset, whence);
 }
 
 uint32_t VFileSystem::tell(uint32_t handle) {

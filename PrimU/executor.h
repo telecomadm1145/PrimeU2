@@ -35,7 +35,7 @@ private:
 
     static Executor* m_instance;
     uc_engine* m_uc;
-    uc_hook m_interrupt_hook, _codeHook;
+    uc_hook m_interrupt_hook, _codeHook, _codeHook2;
     uc_err m_err;
 
     Executable* m_exec;

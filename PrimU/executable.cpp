@@ -14,18 +14,18 @@
 // Load() 的实现
 ErrorCode Executable::Load()
 {
-	//{
-	//	std::string kernel(".\\PRIME_OS.ROM");
-	//	std::vector<uint8_t> _kernelImage;
-	//	if (!ReadFileToVector(kernel, _kernelImage)) return ERROR_LOADER_READER_FAIL;
+	{
+		std::string kernel(".\\PRIME_OS.ROM");
+		std::vector<uint8_t> _kernelImage;
+		if (!ReadFileToVector(kernel, _kernelImage)) return ERROR_LOADER_READER_FAIL;
 
-	//	ErrorCode err;
-	//	MemoryBlock* memBlock;
-	//	__check((err = sMemoryManager->StaticAlloc(0x30000000, _kernelImage.size(), &memBlock)), ERROR_OK, err);
+		ErrorCode err;
+		MemoryBlock* memBlock;
+		__check((err = sMemoryManager->StaticAlloc(0x30000000, _kernelImage.size(), &memBlock)), ERROR_OK, err);
 
-	//	RealPtr addr = memBlock->GetRAddr();
-	//	(memcpy(addr, _kernelImage.data(), _kernelImage.size()));
-	//}
+		RealPtr addr = memBlock->GetRAddr();
+		(memcpy(addr, _kernelImage.data(), _kernelImage.size()));
+	}
 	// 先尝试 ELF（保持原逻辑）
 	{
 		ELFIO::elfio reader;

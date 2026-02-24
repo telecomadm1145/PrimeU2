@@ -95,3 +95,4 @@ private:
 
 #define sMemoryManager MemoryManager::GetInstance()
 #define __GET(T, a) reinterpret_cast<T>(sMemoryManager->GetRealAddr(a))
+#define __ADDR(a) sMemoryManager->GetVirtualAddr((RealPtr)a)

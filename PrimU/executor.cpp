@@ -13,6 +13,7 @@
 #include <chrono>
 #include <capstone/capstone.h>
 #include "Services.h"
+#include "log.h"
 
 Executor* Executor::m_instance = nullptr;
 
@@ -155,20 +156,18 @@ static void PrintStackTrace(uc_engine* uc) {
 		printf("  Failed to read stack memory.\n");
 	}
 }
-
+struct BlockLog {
+	uint32_t pc;
+	int id;
+};
+RollingLogBuffer<BlockLog> block_log(102400);
 void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data);
 void code_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
 	static auto epoch = std::chrono::high_resolution_clock::now();
 	static auto lastUpdate = std::chrono::high_resolution_clock::now();
 	static auto last_int = std::chrono::high_resolution_clock::now();
-	uint32_t cpsr;
-	uc_reg_read(uc, UC_ARM_REG_CPSR, &cpsr);
-
-	bool irq_enabled = !(cpsr & (1 << 7));
-	bool fiq_enabled = !(cpsr & (1 << 6));
-	if (!irq_enabled)
-		return;
+	block_log.push({ (uint32_t)address ,sThreadHandler->GetCurrentThreadId() });
 	auto now = std::chrono::high_resolution_clock::now();
 	*__GET(uint32_t*, 0x51000040) = std::chrono::duration_cast<std::chrono::microseconds>(now - epoch).count(); // Update system time for the guest (in milliseconds)
 	std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastUpdate);
@@ -229,7 +228,6 @@ bool Executor::Initialize(Executable* exec)
 
 uc_hook m_page_fault;
 uc_hook m_tmp;
-uint64_t pc_cache;
 void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t value, void* user_data) {
 	//if (address < 0x10)
 	//	return;
@@ -237,13 +235,7 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 	void* args[16] = { &r0, &r1, &r2, &r3, &r4, &r5, &r6, &r7, &r8, &r9, &r10, &r11, &r12, &sp, &lr, &pc };
 	int regs[16] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
 		UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11, UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC };
-	pc_cache = pc;
 	uc_reg_read_batch(sExecutor->GetUcInstance(), regs, args, 16);
-	//if (pc == 0x306A5F3C || pc == 0x30601A98) // Special:
-	//{
-	//	uc_reg_write(uc, UC_ARM_REG_PC, &lr);
-	//	return;
-	//}
 	if (type == UC_MEM_FETCH_UNMAPPED || type == UC_MEM_FETCH_PROT) {
 		if (pc < 0x2000) {
 			uc_reg_write(uc, UC_ARM_REG_PC, &lr);
@@ -345,7 +337,7 @@ void pf(uc_engine* uc, uc_mem_type type, uint64_t address, int size, int64_t val
 		printf("    Failed to initialize Capstone disassembler.\n");
 	}
 	PrintStackTrace(uc);
-	//__debugbreak();
+	// __debugbreak();
 }
 // BLOCK - 1 - end
 bool Executor::Cleanup()
@@ -357,17 +349,15 @@ bool Executor::Cleanup()
 	callAndcheckError(uc_close(m_uc));
 }
 
-
+__declspec(noinline)
 bool Executor::InitInterrupts()
 {
 	sMemoryManager->StaticAlloc(RTC_REGISTER, 0x100);
-	sMemoryManager->StaticAlloc(0, 0x10);
+	sMemoryManager->StaticAlloc(0, 0x10, nullptr, 3);
+	sMemoryManager->StaticAlloc(0x31FFF000, 0x1000, nullptr, 3);
 	callAndcheckError(uc_hook_add(m_uc, &m_interrupt_hook, UC_HOOK_INTR, interrupt_hook, this, 0, 1));
 	callAndcheckError(uc_hook_add(m_uc, &_codeHook, UC_HOOK_BLOCK, code_hook, NULL, 1, 0));
 	callAndcheckError(uc_hook_add(m_uc, &m_page_fault, UC_HOOK_MEM_INVALID, pf, 0, 1, 0));
-	uint32_t cpsr = 0;
-	//uc_reg_read(m_uc, UC_ARM_REG_CPSR, &cpsr);
-	uc_reg_write(m_uc, UC_ARM_REG_CPSR, &cpsr);
 	//callAndcheckError(uc_hook_add(m_uc, &m_tmp, UC_HOOK_CODE, co_hook, 0, 0x30680A40, 0x30680A40 + 1));
 	return true;
 }
@@ -382,24 +372,28 @@ void Executor::Execute()
 	{
 		m_err = uc_emu_start(m_uc, sThreadHandler->GetCurrentThreadPC(), 0, 0, 0);
 
-		//if (sThreadHandler->interruptPC) {
-		//	printf("interrupt begin PC: %08X\n", sThreadHandler->interruptPC);
-		//	sThreadHandler->interrupting = true;
-		//	m_err = uc_emu_start(m_uc, sThreadHandler->interruptPC, 0, 0, 0);
-		//	uint32_t r0, r1, r2, r3, sp, pc, lr;
-		//	void* args[6] = { &r0, &r1, &r2, &r3, &sp, &pc };
-		//	int regs[6] = { UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_PC };
+		if (m_err == UC_ERR_INSN_INVALID) {
+			uint32_t pc;
+			uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
+			auto pp = __GET(uint32_t*, pc);
+			if (!pc)
+				break;
+			if (*pp != 0xee17ff7e)
+				break;
+			uint32_t cpsr;
+			uc_reg_read(m_uc, UC_ARM_REG_CPSR, &cpsr);
+			cpsr |= (1 << 30);
+			uc_reg_write(m_uc, UC_ARM_REG_CPSR, &cpsr);
+			pc += 4;
+			uc_reg_write(m_uc, UC_ARM_REG_PC, &pc);
+			sThreadHandler->SaveCurrentThreadState();
+			continue;
+		}
 
-
-		//	uc_reg_read_batch(m_uc, regs, args, sizeof(args) / sizeof(void*));
-		//	printf("interrupt end PC: %08X\n", pc);
-		//	sThreadHandler->interrupting = false;
-		//	sThreadHandler->interruptPC = 0;
-		//}
-
-		if (m_err != UC_ERR_OK) {
+		if (m_err != UC_ERR_OK) { // TODO: 修复这里的bug，如果不是pagefault触发的停止运行，会导致跳转到错误的地址
 			uint32_t cpsr = 0;
-			uint32_t pc = pc_cache;
+			uint32_t pc = 0;
+			uc_reg_read(m_uc, UC_ARM_REG_PC, &pc);
 			if (uc_reg_read(m_uc, UC_ARM_REG_CPSR, &cpsr) != UC_ERR_OK) {
 				cpsr = 0; // 无法读取时保守处理
 			}
@@ -416,7 +410,7 @@ void Executor::Execute()
 				pc_addr += 4;
 			}
 			uc_reg_write(m_uc, UC_ARM_REG_PC, &pc_addr);
-
+			printf("%s at 0x%08X, skipping...\n", uc_strerror(m_err), pc);
 			sThreadHandler->SaveCurrentThreadState();
 		}
 		//break;
@@ -522,6 +516,7 @@ void Executor::Execute()
 		// ==================== 新增的反汇编代码块 END ======================
 	}
 }
+RollingLogBuffer<SVCCallRecord> g_svcCallLog;
 
 void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_data)
 {
@@ -540,6 +535,7 @@ void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_d
 
 	SVC &= 0xFFFFF;
 	SystemServiceArguments args2(lr - 4);
+	g_svcCallLog.push(SVCCallRecord{ SVC,sThreadHandler->GetCurrentThreadId(), args2 ,std::chrono::steady_clock::now() });
 	if (SVC < SDKLIB_FirstService || SVC > SDKLIB_LastService) {
 		printf("Unknown SVC: %u at PC: %08X\n", SVC, pc - 4);
 		sp += 8;
@@ -551,7 +547,9 @@ void interrupt_hook(uc_engine* uc, uint64_t address, uint32_t size, void* user_d
 	}
 	auto f = service_table.at(SVC - SDKLIB_FirstService);
 	uint32_t return_value = f ? f(&args2) : 0;
-	// printf("    Caller: %08X\n    PC: %08X\n", lr - 4, pc);
+	if (!f) {
+		printf("Unknown SVC: %u at PC: %08X\n", SVC, lr - 4);
+	}
 	sp += 8;
 
 	uc_reg_write(uc, UC_ARM_REG_R0, &return_value);

@@ -29,8 +29,9 @@ int main(int argc, char** argv)
     }
 
     sExecutor->Execute();
+    while (1) 0();
     sExecutor->Cleanup();
-
+    
     return 0;
 }
 

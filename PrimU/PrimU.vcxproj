@@ -175,6 +175,10 @@
     <ClInclude Include="executable.h" />
     <ClInclude Include="executor.h" />
     <ClInclude Include="handlers.h" />
+    <ClInclude Include="log.h" />
+    <ClInclude Include="logbuf.h" />
+    <ClInclude Include="PrimeObj.h" />
+    <ClInclude Include="svclogwin.h" />
     <ClInclude Include="svc_common.h" />
     <ClInclude Include="imconfig.h" />
     <ClInclude Include="imgui.h" />
