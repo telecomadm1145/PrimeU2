@@ -318,7 +318,7 @@ LCD::LCD() {
 			bool busy = false;
 			bool running = true;
 			auto frame_event = SDL_RegisterEvents(1);
-			auto win = SDL_CreateWindow("Hex editor", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 640, 480, SDL_WINDOW_RESIZABLE);
+			auto win = SDL_CreateWindow("Hex editor", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 1200, 900, SDL_WINDOW_RESIZABLE);
 			auto renderer = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
 			IMGUI_CHECKVERSION();
 			ImGui::CreateContext();
