@@ -21,7 +21,7 @@
 #include "imgui_memory_editor.h"
 #include <SDL.h>
 #include <functional>
-
+#include <array>
 // --- Globals for Window Management ---
 // Since we cannot modify the LCD struct, we use a global map to associate
 // an LCD instance with its window thread and handle. A mutex ensures thread
@@ -94,7 +94,77 @@ std::map<int, int> vk_to_device_keymap = {
 	{'V', 0xB6},   // Alpha
 	{'N', 0x95},   // 帮助
 	{'M', 0xB1},   // 应用
-	{'B', 0xe047}, // 应用
+	{'B', 0xe047}, // 主屏幕
+};
+struct KeyMapping
+{
+	const char* name;
+	float x;
+	float y;
+	float width;
+	float height;
+	uint16_t deviceKeyCode;
+};
+constexpr KeyMapping mapping[] =
+{
+	{ "Apps", 2.5, 39.5, 14, 4.5, 0xB1 },
+	{ "Home",  2.5,  46.0,  14,  4.5,  0xe047 },
+	{ "Symb",  18.0,  39.5,  14,  4.5,  0x91 },
+	{ "Plot",  18.0,  44.5,  14,  4.5,  0xB2 },
+	{ "Num",  18.0,  49.5,  14,  4.5,  0xB3 },
+	{ "Up",  46.0,  39.0,  8,  5.0,  0x03 },
+	{ "Down",  46.0,  50.0,  8,  5.0,  0x05 },
+	{ "Left",  37.0,  44.0,  8,  6.0,  0x02 },
+	{ "Right",  55.0,  44.0,  8,  6.0,  0x04 },
+	{ "Help",  68.0,  39.5,  14,  4.5,  0x95 },
+	{ "View",  68.0,  44.5,  14,  4.5,  0xB4 },
+	{ "Menu",  68.0,  49.5,  14,  4.5,  0x93 },
+	{ "Esc",  84.0,  39.5,  14,  4.5,  0x01 },
+	{ "CAS",  84.0,  46.0,  14,  4.5,  0xB5 },
+
+	{ "Vars",  2.5,  54.5,  14,  5.5,  0x41 },
+	{ "Toolbox",  18.5,  54.5,  14,  5.5,  0x42 },
+	{ "Math",  34.5,  54.5,  14,  5.5,  0x43 },
+	{ "xt_n",  50.5,  54.5,  14,  5.5,  0x44 },
+	{ "a_b/c",  66.5,  54.5,  14,  5.5,  0x45 },
+	{ "Del",  83.5,  54.5,  14,  5.5,  0x0C },
+
+	{ "x^y",  2.5,  61.0,  14,  5.5,  0x46 },
+	{ "SIN",  18.5,  61.0,  14,  5.5,  0x47 },
+	{ "COS",  34.5,  61.0,  14,  5.5,  0x48 },
+	{ "TAN",  50.5,  61.0,  14,  5.5,  0x49 },
+	{ "LN",  66.5,  61.0,  14,  5.5,  0x4A },
+	{ "LOG",  83.5,  61.0,  14,  5.5,  0x4B },
+
+	{ "x^2",  2.5,  67.5,  14,  5.5,  0x4C },
+	{ "+/-",  18.5,  67.5,  14,  5.5,  0x4D },
+	{ "()",  34.5,  67.5,  14,  5.5,  0x4E },
+	{ ",",  50.5,  67.5,  14,  5.5,  0x4F },
+	{ "Enter",  66.5,  67.5,  31,  5.5,  0x0D },
+
+	{ "EEX",  2.5,  74.0,  14,  5.5,  0x50 },
+	{ "7",  18.5,  74.0,  20,  5.5,  0x51 },
+	{ "8",  40.5,  74.0,  20,  5.5,  0x52 },
+	{ "9",  62.5,  74.0,  20,  5.5,  0x53 },
+	{ "/",  84.5,  74.0,  13,  5.5,  0x54 },
+
+	{ "Alpha",  2.5,  80.5,  14,  5.5,  0xB6 },
+	{ "4",  18.5,  80.5,  20,  5.5,  0x55 },
+	{ "5",  40.5,  80.5,  20,  5.5,  0x56 },
+	{ "6",  62.5,  80.5,  20,  5.5,  0x57 },
+	{ "*",  84.5,  80.5,  13,  5.5,  0x58 },
+
+	{ "Shift",  2.5,  87.0,  14,  5.5,  0x8B },
+	{ "1",  18.5,  87.0,  20,  5.5,  0x59 },
+	{ "2",  40.5,  87.0,  20,  5.5,  0x5A },
+	{ "3",  62.5,  87.0,  20,  5.5,  0x33 },
+	{ "-",  84.5,  87.0,  13,  5.5,  0xB9 },
+
+	{ "On",  2.5,  93.5,  14,  5.5,  0x83 },
+	{ "0",  18.5,  93.5,  20,  5.5,  0x30 },
+	{ ".",  40.5,  93.5,  20,  5.5,  0xB8 },
+	{ "Space",  62.5,  93.5,  20,  5.5,  0x20 },
+	{ "+",  84.5,  93.5,  13,  5.5,  0xB7 }
 };
 
 // --- LCDHandler Implementation (from your code) ---
@@ -319,7 +389,7 @@ LCD::LCD() {
 		g_LcdWindowMap[this].isExiting = false;
 		g_LcdWindowMap[this].windowThread = std::thread(WindowThreadProc, this);
 		SVCNameRegistry::Instance().LoadFromFile("syscalls_sdk.json");
-		std::thread([]() {
+		std::thread([&]() {
 			SDL_Init(0);
 			bool busy = false;
 			bool running = true;
@@ -328,6 +398,14 @@ LCD::LCD() {
 				SDL_WINDOWPOS_UNDEFINED, 1200, 900,
 				SDL_WINDOW_RESIZABLE);
 			auto renderer = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED);
+			auto srf = SDL_LoadBMP("Prime_compact.bmp");
+			auto txt = SDL_CreateTextureFromSurface(renderer, srf);
+
+			// ================= 新增：创建用于渲染 LCD 的纹理 =================
+			auto lcd_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+				SDL_TEXTUREACCESS_STREAMING, 320, 240);
+			// ===============================================================
+
 			IMGUI_CHECKVERSION();
 			ImGui::CreateContext();
 			ImGuiIO& io = ImGui::GetIO();
@@ -369,6 +447,29 @@ LCD::LCD() {
 					continue;
 				busy = true;
 				if (event.type == frame_event) {
+					// ================= 新增：每帧更新 LCD 纹理 =================
+					void* pixels;
+					int pitch;
+					if (SDL_LockTexture(lcd_texture, NULL, &pixels, &pitch) == 0) {
+						uint32_t* dst = (uint32_t*)pixels;
+						struct RGB555 {
+							uint16_t b : 8;
+							uint16_t g : 8;
+							uint16_t r : 8;
+						};
+						auto level = sLCDHandler->brightness_level / 4.0 + 0.25;
+						for (int i = 0; i < 320 * 240; i++) {
+							RGB555 pixel = *reinterpret_cast<RGB555*>(&((uint8_t*)this->buffer)[i * 4]);
+							uint8_t r = static_cast<uint8_t>(pixel.r * level);
+							uint8_t g = static_cast<uint8_t>(pixel.g * level);
+							uint8_t b = static_cast<uint8_t>(pixel.b * level);
+							// 转为 ARGB8888 格式
+							dst[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+						}
+						SDL_UnlockTexture(lcd_texture);
+					}
+					// =========================================================
+
 					SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
 					SDL_RenderClear(renderer);
 					ImGui_ImplSDLRenderer2_NewFrame();
@@ -389,6 +490,72 @@ LCD::LCD() {
 						ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
 						ImGuiCond_FirstUseEver);
 					DrawBlockLogWindow(block_log);
+					ImGui::SetNextWindowDockID(
+						ImGui::GetCurrentContext()->DockContext.Nodes.Data[0].key,
+						ImGuiCond_FirstUseEver);
+
+					ImGui::Begin("Key");
+
+					static bool keystat[256]{};
+					static bool show_img = true;
+					if (srf && txt) {
+						auto w = srf->w, h = srf->h;
+						auto bias = ImGui::GetCursorPos();
+						if (show_img)
+							ImGui::Image((void*)txt, ImVec2(w, h));
+						auto bias2 = ImGui::GetCursorPos();
+						int i = 0;
+						for (auto b : mapping) {
+							ImVec2 pos = ImVec2(b.x / 100.0f * w, b.y / 100.0f * h);
+							ImVec2 sz = ImVec2(b.width / 100.0f * w, b.height / 100.0f * h);
+							ImGui::SetCursorPos({ bias.x + pos.x,bias.y + pos.y });
+							if (show_img)
+								ImGui::InvisibleButton(b.name, sz);
+							else
+								ImGui::Button(b.name, sz);
+
+							if (keystat[i] ^ ImGui::IsItemActive()) {
+								keystat[i] = !keystat[i];
+								UIMultipressEvent uimp;
+								uimp.key_code0 = b.deviceKeyCode;
+								uimp.status = keystat[i] ? UI_EVENT_TYPE_KEY : UI_EVENT_TYPE_KEY_UP;
+								EnqueueEvent(uimp);
+							}
+							++i;
+						}
+						ImGui::SetCursorPos(bias);
+						ImVec2 lcd_pos = ImGui::GetCursorScreenPos();
+						ImGui::Image((void*)(intptr_t)lcd_texture, ImVec2(320, 240));
+
+						bool is_hovered = ImGui::IsItemHovered();
+						static bool is_dragging = false;
+
+						// 处理触控事件，与 Win32 的 WM_LBUTTONDOWN/UP/MOVE 保持一致行为
+						if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+							is_dragging = true;
+							ImVec2 mouse_pos = ImGui::GetMousePos();
+							TouchUpdate((uint16_t)(mouse_pos.x - lcd_pos.x), (uint16_t)(mouse_pos.y - lcd_pos.y), 0, UI_EVENT_TYPE_TOUCH_BEGIN);
+						}
+						if (is_dragging) {
+							ImVec2 mouse_pos = ImGui::GetMousePos();
+							int tx = (int)(mouse_pos.x - lcd_pos.x);
+							int ty = (int)(mouse_pos.y - lcd_pos.y);
+							// 限制坐标在 0~319, 0~239 范围内
+							if (tx < 0) tx = 0; if (tx >= 320) tx = 319;
+							if (ty < 0) ty = 0; if (ty >= 240) ty = 239;
+
+							if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+								is_dragging = false;
+								TouchUpdate((uint16_t)tx, (uint16_t)ty, 0, UI_EVENT_TYPE_TOUCH_END);
+							}
+							else if (ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) {
+								TouchUpdate((uint16_t)tx, (uint16_t)ty, 0, UI_EVENT_TYPE_TOUCH_MOVE);
+							}
+						}
+						ImGui::SetCursorPos(bias2);
+						ImGui::Checkbox("Show Image", &show_img);
+					}
+					ImGui::End();
 					// ===== Desktop Component Explorer =====
 					{
 						// ── 持久状态 ──
