@@ -217,6 +217,9 @@
     <ClCompile Include="svc_system.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="HpInterOp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

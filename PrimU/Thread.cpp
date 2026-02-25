@@ -148,3 +148,54 @@ void Thread::ReleaseSemaphore(ISemaphore* sem, int releaseCount,
 	if (sem)
 		sem->Release(releaseCount, previousCount);
 }
+
+void Thread::ExecuteCustomCode(VirtPtr pc, Arg a, Arg b, Arg c, Arg d)
+{
+	if (!inited) {
+		if (!MapSharedMemoryToLocalEngine()) {
+			printf("Thread %d shutting down due to memory mapping failure.\n", _id);
+			return;
+		}
+		sExecutor->RegisterHooksForEngine(_uc);
+		inited = true;
+	}
+	// 按照 ARM 调用约定设置参数寄存器 R0-R3
+	if (a.has_value()) {
+		uint32_t val = a.value();
+		uc_reg_write(_uc, UC_ARM_REG_R0, &val);
+	}
+	if (b.has_value()) {
+		uint32_t val = b.value();
+		uc_reg_write(_uc, UC_ARM_REG_R1, &val);
+	}
+	if (c.has_value()) {
+		uint32_t val = c.value();
+		uc_reg_write(_uc, UC_ARM_REG_R2, &val);
+	}
+	if (d.has_value()) {
+		uint32_t val = d.value();
+		uc_reg_write(_uc, UC_ARM_REG_R3, &val);
+	}
+
+	// 设置 LR 为 0，当代码执行 BX LR 返回时会跳转到地址 0，用于检测返回
+	uint32_t lr = 0xDEADC0DE;
+	uc_reg_write(_uc, UC_ARM_REG_LR, &lr);
+	uc_reg_write(_uc, UC_ARM_REG_PC, &pc);
+	uc_reg_write(_uc, UC_ARM_REG_SP, &_startSp);
+
+	// 执行循环
+	VirtPtr current_pc = pc;
+	while (1) {
+		uc_err err = uc_emu_start(_uc, current_pc, 0, 0, 0);
+
+		if (err) {
+			uc_reg_read(_uc, UC_ARM_REG_PC, &current_pc);
+			if (current_pc == 0xDEADC0DE)
+				break;
+			printf("Thread %d ExecuteCustomCode error: %u (%s) %p\n",
+				_id, err, uc_strerror(err), current_pc);
+			break;
+		}
+
+	}
+}

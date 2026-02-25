@@ -37,6 +37,8 @@ public:
 	ISemaphore* CreateSemaphore(int initialCount, int maxCount);
 	void WaitForSemaphore(ISemaphore* sem, int timeoutMillis);
 	void ReleaseSemaphore(ISemaphore* sem, int releaseCount, int* previousCount);
+	using Arg = std::optional<uint32_t>;
+	void ExecuteCustomCode(VirtPtr pc, Arg a = {}, Arg b = {}, Arg c = {}, Arg d = {});
 
 	int GetId() const { return _id; }
 
@@ -51,6 +53,8 @@ private:
 
 	uc_engine* _uc;
 	std::thread _nativeThread;
+
+	bool inited = false;
 
 	uint8_t _priority;
 	int _id;

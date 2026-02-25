@@ -356,6 +356,7 @@ inline void DrawBlockLogWindow(RollingLogBuffer<BlockLog>& logBuffer,
 
 	ImGui::End();
 }
+bool timer_running = true;
 // The constructor now launches the window thread.
 LCD::LCD() {
 	// Original initializations
@@ -495,7 +496,14 @@ LCD::LCD() {
 						ImGuiCond_FirstUseEver);
 
 					ImGui::Begin("Key");
-
+					if (ImGui::Button("USB Gadget")) 
+						EnqueueSpecial(UI_EVENT_TYPE_USB_GADGET_INSERTION);
+					if (ImGui::Button("USB Device"))
+						EnqueueSpecial(UI_EVENT_TYPE_USB_DEVICE_INSERTION);
+					if (ImGui::Button("USB Ejection"))
+						EnqueueSpecial(UI_EVENT_TYPE_USB_EJECTION);
+					if (ImGui::Button("Toggle Timer"))
+						timer_running = !timer_running;
 					static bool keystat[256]{};
 					static bool show_img = true;
 					if (srf && txt) {
@@ -1116,10 +1124,12 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		InvalidateRect(hwnd, NULL, FALSE);
 		(*__GET(uint32_t*, 0x51000040)) -= 10000 / 60;
 		static int i = 0, j = 0;
-		if (i++ > 10)
-			EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_SYS_TIMER), i = 0;
-		//if (j++ > 60)
-		//	EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_INDICATOR_TIMER), j = 0;
+		if (timer_running) {
+			if (i++ > 10)
+				EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_SYS_TIMER), i = 0;
+			if (j++ > 60)
+				EnqueueSpecial(ui_event_type_e::UI_EVENT_TYPE_DEVICE_TIMER), j = 0;
+		}
 		return 0;
 	}
 

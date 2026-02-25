@@ -7,7 +7,9 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
-
+#include <cstdio>
+#include <cstdint>
+#include <cctype>
 #include "LCD.h"
 #include "PELoader.h"
 #include "Thread.h"
@@ -183,7 +185,12 @@ restart:
 	int k;
 	if (k = special_event.load()) {
 		special_event.store(0);
-		event.event_type = (ui_event_type_e)k;
+		if (k < 0x100 && k != 0x20) {
+			event.event_type = UI_EVENT_TYPE_SYSTEM;
+			event.key_code0 = k;
+		}
+		else
+			event.event_type = (ui_event_type_e)k;
 		return 0;
 	}
 	{
@@ -341,6 +348,10 @@ static void frp_save() {
 	std::cout << "    +FRP: saved " << g_frp_data.size() << " bytes to disk\n";
 }
 
+
+
+uint32_t usb_in_cb = 0;
+void(*usb_out_cb)(void* dat, size_t sz) = 0;
 uint32_t DeviceIoControl(SystemServiceArguments* args) {
 	uint32_t handle = args->r0;
 	uint32_t request = args->r1;
@@ -443,7 +454,31 @@ uint32_t DeviceIoControl(SystemServiceArguments* args) {
 			return 1;
 		}
 	}
-
+	if (g_vdev_table[handle].ends_with("USB")) {
+		switch (request) {
+		case 4:
+			return 1;
+		case 258:
+			if (usb_out_cb)
+				usb_out_cb(in, size);
+			return 1;
+		case 259:
+			std::cout << "USB Set IN Handler to 0x" << std::hex << (uint32_t)args->r2 << "\n";
+			usb_in_cb = args->r2;
+			return 1;
+		case 263:
+			return 0;
+		}
+	}
+	if (g_vdev_table[handle].ends_with("USBHOST")) {
+		switch (request) {
+		case 257:
+			break;
+		}
+	}
+	if (g_vdev_table[handle].ends_with("INDICATOR")) {
+		return 1;
+	}
 	std::cout << "    +DeviceIoControl_stub file:" << g_vdev_table[handle]
 		<< " request:" << request << " size:" << size << "\n";
 	// 未知设备的默认处理
