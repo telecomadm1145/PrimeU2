@@ -1,6 +1,8 @@
-#pragma once
-// svc_names.h ÒÔ¼°Ïà¹ØµÄ ImGui äÖÈ¾Âß¼­·â×°
+ï»¿#pragma once
+// svc_names.h ä»¥åŠç›¸å…³çš„ ImGui æ¸²æŸ“é€»è¾‘å°è£…
 
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -10,685 +12,665 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <chrono>
-#include <algorithm>
 
-// ¼ÙÉèÕâĞ©Í·ÎÄ¼şÔÚÄãµÄÏîÄ¿ÖĞ¿ÉÓÃ
+// å‡è®¾è¿™äº›å¤´æ–‡ä»¶åœ¨ä½ çš„é¡¹ç›®ä¸­å¯ç”¨
 #include "imgui.h"
-#include "logbuf.h"
 #include "log.h"
+#include "logbuf.h"
 
 // ============================================================================
-// SVC Ãû³Æ×¢²á±í (±£³Öµ¥ÀıÄ£Ê½)
+// SVC åç§°æ³¨å†Œè¡¨ (ä¿æŒå•ä¾‹æ¨¡å¼)
 // ============================================================================
 
 class SVCNameRegistry {
 
 public:
+  static SVCNameRegistry &Instance() {
 
-	static SVCNameRegistry& Instance() {
+    static SVCNameRegistry inst;
 
-		static SVCNameRegistry inst;
+    return inst;
+  }
 
-		return inst;
+  /// ä» JSON æ–‡ä»¶åŠ è½½ï¼Œæ ¼å¼ï¼š{ "0xHEX": "Name", ... }
 
-	}
+  /// è¿”å›åŠ è½½çš„æ¡ç›®æ•°ï¼Œå¤±è´¥è¿”å› -1
 
+  int LoadFromFile(const std::string &path) {
 
-	/// ´Ó JSON ÎÄ¼ş¼ÓÔØ£¬¸ñÊ½£º{ "0xHEX": "Name", ... }
+    std::ifstream ifs(path);
 
-	/// ·µ»Ø¼ÓÔØµÄÌõÄ¿Êı£¬Ê§°Ü·µ»Ø -1
+    if (!ifs.is_open()) {
 
-	int LoadFromFile(const std::string& path) {
+      fprintf(stderr, "[SVCNameRegistry] Failed to open: %s\n", path.c_str());
 
-		std::ifstream ifs(path);
+      return -1;
+    }
 
-		if (!ifs.is_open()) {
+    std::stringstream ss;
 
-			fprintf(stderr, "[SVCNameRegistry] Failed to open: %s\n", path.c_str());
+    ss << ifs.rdbuf();
 
-			return -1;
+    std::string content = ss.str();
 
-		}
+    return Parse(content);
+  }
 
+  /// ä»å†…å­˜å­—ç¬¦ä¸²åŠ è½½
 
-		std::stringstream ss;
+  int LoadFromString(const std::string &json) { return Parse(json); }
 
-		ss << ifs.rdbuf();
+  /// æŸ¥æ‰¾ SVC åç§°ï¼Œæœªæ‰¾åˆ°è¿”å› nullptr
 
-		std::string content = ss.str();
+  const char *Lookup(unsigned int svc) const {
 
+    auto it = names_.find(svc);
 
-		return Parse(content);
+    if (it != names_.end())
 
-	}
+      return it->second.c_str();
 
+    return nullptr;
+  }
 
-	/// ´ÓÄÚ´æ×Ö·û´®¼ÓÔØ
+  /// è·å–æ ¼å¼åŒ–åç§°ï¼šæœ‰åˆ™ "Name (0xHEX)"ï¼Œæ— åˆ™ "0xHEX"
 
-	int LoadFromString(const std::string& json) {
+  std::string Format(unsigned int svc) const {
 
-		return Parse(json);
+    const char *name = Lookup(svc);
 
-	}
+    char buf[256];
 
+    if (name)
 
-	/// ²éÕÒ SVC Ãû³Æ£¬Î´ÕÒµ½·µ»Ø nullptr
+      snprintf(buf, sizeof(buf), "%s", name);
 
-	const char* Lookup(unsigned int svc) const {
+    else
 
-		auto it = names_.find(svc);
+      snprintf(buf, sizeof(buf), "0x%X", svc);
 
-		if (it != names_.end())
+    return buf;
+  }
 
-			return it->second.c_str();
+  /// æ¡ç›®æ€»æ•°
 
-		return nullptr;
+  size_t Count() const { return names_.size(); }
 
-	}
+  /// æ¸…ç©º
 
+  void Clear() { names_.clear(); }
 
-	/// »ñÈ¡¸ñÊ½»¯Ãû³Æ£ºÓĞÔò "Name (0xHEX)"£¬ÎŞÔò "0xHEX"
+  /// éå†æ‰€æœ‰æ¡ç›®
 
-	std::string Format(unsigned int svc) const {
+  const std::unordered_map<unsigned int, std::string> &GetAll() const {
 
-		const char* name = Lookup(svc);
-
-		char buf[256];
-
-		if (name)
-
-			snprintf(buf, sizeof(buf), "%s", name);
-
-		else
-
-			snprintf(buf, sizeof(buf), "0x%X", svc);
-
-		return buf;
-
-	}
-
-
-	/// ÌõÄ¿×ÜÊı
-
-	size_t Count() const { return names_.size(); }
-
-
-	/// Çå¿Õ
-
-	void Clear() { names_.clear(); }
-
-
-	/// ±éÀúËùÓĞÌõÄ¿
-
-	const std::unordered_map<unsigned int, std::string>& GetAll() const {
-
-		return names_;
-
-	}
-
+    return names_;
+  }
 
 private:
+  SVCNameRegistry() = default;
 
-	SVCNameRegistry() = default;
+  // ==================================================================
 
+  //  æç®€ JSON è§£æï¼šåªå¤„ç† { "key": "value", ... } æ ¼å¼
 
-	// ==================================================================
+  //  - å¿½ç•¥ç©ºç™½ã€æ¢è¡Œ
 
-	//  ¼«¼ò JSON ½âÎö£ºÖ»´¦Àí { "key": "value", ... } ¸ñÊ½
+  //  - key å¿…é¡»æ˜¯ "0x..." æˆ–çº¯åè¿›åˆ¶æ•°å­—å­—ç¬¦ä¸²
 
-	//  - ºöÂÔ¿Õ°×¡¢»»ĞĞ
+  //  - value æ˜¯æ™®é€šå­—ç¬¦ä¸²
 
-	//  - key ±ØĞëÊÇ "0x..." »ò´¿Ê®½øÖÆÊı×Ö×Ö·û´®
+  //  - æ”¯æŒè½¬ä¹‰ \" \\ \/ \n \t ç­‰
 
-	//  - value ÊÇÆÕÍ¨×Ö·û´®
+  // ==================================================================
 
-	//  - Ö§³Ö×ªÒå \" \\ \/ \n \t µÈ
+  int Parse(const std::string &json) {
 
-	// ==================================================================
+    const char *p = json.c_str();
 
-	int Parse(const std::string& json) {
+    const char *end = p + json.size();
 
-		const char* p = json.c_str();
+    int count = 0;
 
-		const char* end = p + json.size();
+    // è·³è¿‡ç©ºç™½
 
-		int count = 0;
+    auto skipWS = [&]() {
+      while (p < end && (*p == ' ' || *p == '\t' ||
 
+                         *p == '\n' || *p == '\r'))
 
-		// Ìø¹ı¿Õ°×
+        ++p;
+    };
 
-		auto skipWS = [&]() {
+    skipWS();
 
-			while (p < end && (*p == ' ' || *p == '\t' ||
+    // æœŸæœ› '{'
 
-				*p == '\n' || *p == '\r'))
+    if (p >= end || *p != '{') {
 
-				++p;
+      fprintf(stderr, "[SVCNameRegistry] Expected '{' at start\n");
 
-			};
+      return -1;
+    }
 
+    ++p; // skip '{'
 
-		skipWS();
+    while (p < end) {
 
+      skipWS();
 
-		// ÆÚÍû '{'
+      // ç»“æŸ '}'
 
-		if (p >= end || *p != '{') {
+      if (p < end && *p == '}')
 
-			fprintf(stderr, "[SVCNameRegistry] Expected '{' at start\n");
+        break;
 
-			return -1;
+      // é€—å·åˆ†éš”
 
-		}
+      if (p < end && *p == ',') {
 
-		++p; // skip '{'
+        ++p;
 
+        skipWS();
+      }
 
-		while (p < end) {
+      // æ£€æŸ¥ç»“æŸ
 
-			skipWS();
+      if (p < end && *p == '}')
 
+        break;
 
-			// ½áÊø '}'
+      // è§£æ key
 
-			if (p < end && *p == '}')
+      std::string key;
 
-				break;
+      if (!parseString(p, end, key)) {
 
+        fprintf(stderr, "[SVCNameRegistry] Failed to parse key at offset %zu\n",
 
-			// ¶ººÅ·Ö¸ô
+                (size_t)(p - json.c_str()));
 
-			if (p < end && *p == ',') {
+        return -1;
+      }
 
-				++p;
+      skipWS();
 
-				skipWS();
+      // æœŸæœ› ':'
 
-			}
+      if (p >= end || *p != ':') {
 
+        fprintf(stderr, "[SVCNameRegistry] Expected ':' at offset %zu\n",
 
-			// ¼ì²é½áÊø
+                (size_t)(p - json.c_str()));
 
-			if (p < end && *p == '}')
+        return -1;
+      }
 
-				break;
+      ++p;
 
+      skipWS();
 
-			// ½âÎö key
+      // è§£æ value
 
-			std::string key;
+      std::string value;
 
-			if (!parseString(p, end, key)) {
+      if (!parseString(p, end, value)) {
 
-				fprintf(stderr, "[SVCNameRegistry] Failed to parse key at offset %zu\n",
+        fprintf(stderr,
+                "[SVCNameRegistry] Failed to parse value at offset %zu\n",
 
-					(size_t)(p - json.c_str()));
+                (size_t)(p - json.c_str()));
 
-				return -1;
+        return -1;
+      }
 
-			}
+      // key â†’ unsigned int
 
+      unsigned int svcNum = 0;
 
-			skipWS();
+      if (!parseHexOrDec(key, svcNum)) {
 
+        fprintf(stderr, "[SVCNameRegistry] Invalid number key: '%s'\n",
 
-			// ÆÚÍû ':'
+                key.c_str());
 
-			if (p >= end || *p != ':') {
+        return -1;
+      }
 
-				fprintf(stderr, "[SVCNameRegistry] Expected ':' at offset %zu\n",
+      names_[svcNum] = std::move(value);
 
-					(size_t)(p - json.c_str()));
+      ++count;
+    }
 
-				return -1;
+    printf("[SVCNameRegistry] Loaded %d SVC names\n", count);
 
-			}
+    return count;
+  }
 
-			++p;
+  // è§£æ JSON å­—ç¬¦ä¸² "..."ï¼Œæ”¯æŒåŸºæœ¬è½¬ä¹‰
 
-			skipWS();
+  static bool parseString(const char *&p, const char *end, std::string &out) {
 
+    out.clear();
 
-			// ½âÎö value
+    if (p >= end || *p != '"')
 
-			std::string value;
+      return false;
 
-			if (!parseString(p, end, value)) {
+    ++p; // skip opening '"'
 
-				fprintf(stderr, "[SVCNameRegistry] Failed to parse value at offset %zu\n",
+    while (p < end) {
 
-					(size_t)(p - json.c_str()));
+      char c = *p++;
 
-				return -1;
+      if (c == '"') {
 
-			}
+        return true; // æ­£å¸¸ç»“æŸ
+      }
 
+      if (c == '\\' && p < end) {
 
-			// key ¡ú unsigned int
+        char esc = *p++;
 
-			unsigned int svcNum = 0;
+        switch (esc) {
 
-			if (!parseHexOrDec(key, svcNum)) {
+        case '"':
+          out += '"';
+          break;
 
-				fprintf(stderr, "[SVCNameRegistry] Invalid number key: '%s'\n",
+        case '\\':
+          out += '\\';
+          break;
 
-					key.c_str());
+        case '/':
+          out += '/';
+          break;
 
-				return -1;
+        case 'n':
+          out += '\n';
+          break;
 
-			}
+        case 't':
+          out += '\t';
+          break;
 
+        case 'r':
+          out += '\r';
+          break;
 
-			names_[svcNum] = std::move(value);
+        case 'b':
+          out += '\b';
+          break;
 
-			++count;
+        case 'f':
+          out += '\f';
+          break;
 
-		}
+        case 'u': {
 
+          // \uXXXX â€” ç®€å•å¤„ç†ï¼Œè·³è¿‡4ä½
 
-		printf("[SVCNameRegistry] Loaded %d SVC names\n", count);
+          if (p + 4 <= end) {
 
-		return count;
+            char hex[5] = {};
 
-	}
+            memcpy(hex, p, 4);
 
+            p += 4;
 
-	// ½âÎö JSON ×Ö·û´® "..."£¬Ö§³Ö»ù±¾×ªÒå
+            unsigned int cp = (unsigned int)strtoul(hex, nullptr, 16);
 
-	static bool parseString(const char*& p, const char* end, std::string& out) {
+            if (cp < 0x80) {
 
-		out.clear();
+              out += (char)cp;
 
-		if (p >= end || *p != '"')
+            }
 
-			return false;
+            else if (cp < 0x800) {
 
-		++p; // skip opening '"'
+              out += (char)(0xC0 | (cp >> 6));
 
+              out += (char)(0x80 | (cp & 0x3F));
 
-		while (p < end) {
+            }
 
-			char c = *p++;
+            else {
 
-			if (c == '"') {
+              out += (char)(0xE0 | (cp >> 12));
 
-				return true; // Õı³£½áÊø
+              out += (char)(0x80 | ((cp >> 6) & 0x3F));
 
-			}
+              out += (char)(0x80 | (cp & 0x3F));
+            }
+          }
 
-			if (c == '\\' && p < end) {
+          break;
+        }
 
-				char esc = *p++;
+        default:
+          out += esc;
+          break;
+        }
 
-				switch (esc) {
+      }
 
-				case '"':  out += '"';  break;
+      else {
 
-				case '\\': out += '\\'; break;
+        out += c;
+      }
+    }
 
-				case '/':  out += '/';  break;
+    return false; // æœªé—­åˆ
+  }
 
-				case 'n':  out += '\n'; break;
+  // "0x1000a" â†’ 0x1000a, "65536" â†’ 65536
 
-				case 't':  out += '\t'; break;
+  static bool parseHexOrDec(const std::string &s, unsigned int &out) {
 
-				case 'r':  out += '\r'; break;
+    if (s.empty())
+      return false;
 
-				case 'b':  out += '\b'; break;
+    char *endptr = nullptr;
 
-				case 'f':  out += '\f'; break;
+    unsigned long val;
 
-				case 'u': {
+    if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
 
-					// \uXXXX ¡ª ¼òµ¥´¦Àí£¬Ìø¹ı4Î»
+      val = strtoul(s.c_str(), &endptr, 16);
 
-					if (p + 4 <= end) {
+    else
 
-						char hex[5] = {};
+      val = strtoul(s.c_str(), &endptr, 10);
 
-						memcpy(hex, p, 4);
+    if (endptr == s.c_str() || *endptr != '\0')
 
-						p += 4;
+      return false;
 
-						unsigned int cp = (unsigned int)strtoul(hex, nullptr, 16);
+    out = static_cast<unsigned int>(val);
 
-						if (cp < 0x80) {
+    return true;
+  }
 
-							out += (char)cp;
-
-						}
-
-						else if (cp < 0x800) {
-
-							out += (char)(0xC0 | (cp >> 6));
-
-							out += (char)(0x80 | (cp & 0x3F));
-
-						}
-
-						else {
-
-							out += (char)(0xE0 | (cp >> 12));
-
-							out += (char)(0x80 | ((cp >> 6) & 0x3F));
-
-							out += (char)(0x80 | (cp & 0x3F));
-
-						}
-
-					}
-
-					break;
-
-				}
-
-				default: out += esc; break;
-
-				}
-
-			}
-
-			else {
-
-				out += c;
-
-			}
-
-		}
-
-		return false; // Î´±ÕºÏ
-
-	}
-
-
-	// "0x1000a" ¡ú 0x1000a, "65536" ¡ú 65536
-
-	static bool parseHexOrDec(const std::string& s, unsigned int& out) {
-
-		if (s.empty()) return false;
-
-		char* endptr = nullptr;
-
-		unsigned long val;
-
-
-		if (s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
-
-			val = strtoul(s.c_str(), &endptr, 16);
-
-		else
-
-			val = strtoul(s.c_str(), &endptr, 10);
-
-
-		if (endptr == s.c_str() || *endptr != '\0')
-
-			return false;
-
-		out = static_cast<unsigned int>(val);
-
-		return true;
-
-	}
-
-
-	std::unordered_map<unsigned int, std::string> names_;
-
+  std::unordered_map<unsigned int, std::string> names_;
 };
 
-
-
-
 // ============================================================================
-// ¸¨ÖúäÖÈ¾º¯Êı
+// è¾…åŠ©æ¸²æŸ“å‡½æ•°
 // ============================================================================
 inline ImVec4 GetSVCColor(unsigned int svc) {
-	// ¼òµ¥µÄÑÕÉ«·Ö×éÂß¼­
-	if ((svc & 0xFFF00) == 0x10000) return ImVec4(0.4f, 0.7f, 1.0f, 1.0f); // ºËĞÄ
-	if ((svc & 0xFFF00) == 0x10100) return ImVec4(0.8f, 0.5f, 0.9f, 1.0f); // IPC
-	return ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+  // ç®€å•çš„é¢œè‰²åˆ†ç»„é€»è¾‘
+  if ((svc & 0xFFF00) == 0x10000)
+    return ImVec4(0.4f, 0.7f, 1.0f, 1.0f); // æ ¸å¿ƒ
+  if ((svc & 0xFFF00) == 0x10100)
+    return ImVec4(0.8f, 0.5f, 0.9f, 1.0f); // IPC
+  return ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
 }
 
-inline void RenderSVCRow(int displayIdx, const SVCCallRecord& rec,
-	std::chrono::steady_clock::time_point baseTime,
-	const SVCNameRegistry& reg, bool showTimestamp,
-	bool showCallerPC, bool showArgs)
-{
-	const char* svcName = reg.Lookup(rec.svc);
-	ImVec4 color = GetSVCColor(rec.svc);
+inline void RenderSVCRow(int displayIdx, const SVCCallRecord &rec,
+                         std::chrono::steady_clock::time_point baseTime,
+                         const SVCNameRegistry &reg, bool showTimestamp,
+                         bool showCallerPC, bool showArgs) {
+  const char *svcName = reg.Lookup(rec.svc);
+  ImVec4 color = GetSVCColor(rec.svc);
 
-	ImGui::TableNextRow();
+  ImGui::TableNextRow();
 
-	// # ±àºÅ
-	ImGui::TableNextColumn();
-	ImGui::TextDisabled("%d", displayIdx);
+  // # ç¼–å·
+  ImGui::TableNextColumn();
+  ImGui::TextDisabled("%d", displayIdx);
 
-	// SVC ±àºÅ
-	ImGui::TableNextColumn();
-	ImGui::TextColored(color, "0x%X", rec.svc);
+  // SVC ç¼–å·
+  ImGui::TableNextColumn();
+  ImGui::TextColored(color, "0x%X", rec.svc);
 
-	// Ãû³Æ
-	ImGui::TableNextColumn();
-	if (svcName) {
-		ImGui::TextColored(color, "%s", svcName);
-	}
-	else {
-		ImGui::TextDisabled("(unknown)");
-	}
+  // åç§°
+  ImGui::TableNextColumn();
+  if (svcName) {
+    ImGui::TextColored(color, "%s", svcName);
+  } else {
+    ImGui::TextDisabled("(unknown)");
+  }
 
-	// ĞüÍ£ÌáÊ¾ (Éî¶ÈĞÅÏ¢Õ¹Ê¾)
-	if (ImGui::IsItemHovered()) {
-		ImGui::BeginTooltip();
-		ImGui::TextColored(color, "SVC 0x%X Detail", rec.svc);
-		ImGui::Separator();
-		ImGui::Text("Thread ID: %u", rec.threadid);
-		ImGui::Text("PC: 0x%08X", rec.ssa.caller_pc);
-		ImGui::Text("SP: 0x%08X", rec.ssa.sp);
-		ImGui::Separator();
-		ImGui::Columns(2, "regs", false);
-		ImGui::Text("R0: 0x%08X", rec.ssa.r0); ImGui::NextColumn();
-		ImGui::Text("R1: 0x%08X", rec.ssa.r1); ImGui::NextColumn();
-		ImGui::Text("R2: 0x%08X", rec.ssa.r2); ImGui::NextColumn();
-		ImGui::Text("R3: 0x%08X", rec.ssa.r3);
-		ImGui::Columns(1);
-		ImGui::EndTooltip();
-	}
+  // æ‚¬åœæç¤º (æ·±åº¦ä¿¡æ¯å±•ç¤º)
+  if (ImGui::IsItemHovered()) {
+    ImGui::BeginTooltip();
+    ImGui::TextColored(color, "SVC 0x%X Detail", rec.svc);
+    ImGui::Separator();
+    ImGui::Text("Thread ID: %u", rec.threadid);
+    ImGui::Text("PC: 0x%08X", rec.ssa.caller_pc);
+    ImGui::Text("SP: 0x%08X", rec.ssa.sp);
+    ImGui::Separator();
+    ImGui::Columns(2, "regs", false);
+    ImGui::Text("R0: 0x%08X", rec.ssa.r0);
+    ImGui::NextColumn();
+    ImGui::Text("R1: 0x%08X", rec.ssa.r1);
+    ImGui::NextColumn();
+    ImGui::Text("R2: 0x%08X", rec.ssa.r2);
+    ImGui::NextColumn();
+    ImGui::Text("R3: 0x%08X", rec.ssa.r3);
+    ImGui::Columns(1);
+    ImGui::EndTooltip();
+  }
 
-	ImGui::TableNextColumn();
-	ImGui::Text("%u", rec.threadid);
+  ImGui::TableNextColumn();
+  ImGui::Text("%u", rec.threadid);
 
-	if (showTimestamp) {
-		ImGui::TableNextColumn();
-		auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(rec.timestamp - baseTime);
-		ImGui::Text("%.3f ms", elapsed.count() / 1000.0);
-	}
+  if (showTimestamp) {
+    ImGui::TableNextColumn();
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+        rec.timestamp - baseTime);
+    ImGui::Text("%.3f ms", elapsed.count() / 1000.0);
+  }
 
-	if (showCallerPC) {
-		ImGui::TableNextColumn();
-		ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "%08X", rec.ssa.caller_pc);
-	}
+  if (showCallerPC) {
+    ImGui::TableNextColumn();
+    ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "%08X",
+                       rec.ssa.caller_pc);
+  }
 
-	if (showArgs) {
-		ImGui::TableNextColumn(); ImGui::Text("%08X", rec.ssa.r0);
-		ImGui::TableNextColumn(); ImGui::Text("%08X", rec.ssa.r1);
-		ImGui::TableNextColumn(); ImGui::Text("%08X", rec.ssa.r2);
-		ImGui::TableNextColumn(); ImGui::Text("%08X", rec.ssa.r3);
-		ImGui::TableNextColumn(); ImGui::Text("%08X", rec.ssa.sp);
-	}
+  if (showArgs) {
+    ImGui::TableNextColumn();
+    ImGui::Text("%08X", rec.ssa.r0);
+    ImGui::TableNextColumn();
+    ImGui::Text("%08X", rec.ssa.r1);
+    ImGui::TableNextColumn();
+    ImGui::Text("%08X", rec.ssa.r2);
+    ImGui::TableNextColumn();
+    ImGui::Text("%08X", rec.ssa.r3);
+    ImGui::TableNextColumn();
+    ImGui::Text("%08X", rec.ssa.sp);
+  }
 }
 
 // ============================================================================
-// Ö÷´°¿ÚÂß¼­
+// ä¸»çª—å£é€»è¾‘
 // ============================================================================
-template<typename T>
-class RollingLogBuffer; // ¼ÙÉèÕâÊÇÄãµÄ»º³åÀà
+template <typename T> class RollingLogBuffer; // å‡è®¾è¿™æ˜¯ä½ çš„ç¼“å†²ç±»
 
-inline void DrawSVCLogWindow(RollingLogBuffer<SVCCallRecord>& logBuffer, bool* p_open = nullptr) {
-	// ¾²Ì¬³Ö¾Ã»¯×´Ì¬
-	static bool autoScroll = true;
-	static bool showTimestamp = true;
-	static bool showArgs = true;
-	static bool showCallerPC = true;
-	static bool pauseUpdate = false;
-	static char filterText[128] = "";
+inline void DrawSVCLogWindow(RollingLogBuffer<SVCCallRecord> &logBuffer,
+                             bool *p_open = nullptr) {
+  // é™æ€æŒä¹…åŒ–çŠ¶æ€
+  static bool autoScroll = true;
+  static bool showTimestamp = true;
+  static bool showArgs = true;
+  static bool showCallerPC = true;
+  static bool pauseUpdate = false;
+  static char filterText[128] = "";
 
-	// ¡¾ÔİÍ£¹¦ÄÜµÄºËĞÄ¡¿£º¾²Ì¬ÈİÆ÷´æ´¢¿ìÕÕ
-	static std::vector<SVCCallRecord> frozenSnapshot;
-	static bool wasPaused = false;
+  // ã€æš‚åœåŠŸèƒ½çš„æ ¸å¿ƒã€‘ï¼šé™æ€å®¹å™¨å­˜å‚¨å¿«ç…§
+  static std::vector<SVCCallRecord> frozenSnapshot;
+  static bool wasPaused = false;
 
-	ImGui::SetNextWindowSize(ImVec2(1000, 600), ImGuiCond_FirstUseEver);
-	if (!ImGui::Begin("SVC Call Log", p_open, ImGuiWindowFlags_MenuBar)) {
-		ImGui::End();
-		return;
-	}
+  ImGui::SetNextWindowSize(ImVec2(1000, 600), ImGuiCond_FirstUseEver);
+  if (!ImGui::Begin("SVC Call Log", p_open, ImGuiWindowFlags_MenuBar)) {
+    ImGui::End();
+    return;
+  }
 
-	// ´¦Àí¼üÅÌ¿ì½İ¼ü (¿Õ¸ñ¼üÔİÍ£)
-	if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_Space)) {
-		pauseUpdate = !pauseUpdate;
-	}
+  // å¤„ç†é”®ç›˜å¿«æ·é”® (ç©ºæ ¼é”®æš‚åœ)
+  if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+      ImGui::IsKeyPressed(ImGuiKey_Space)) {
+    pauseUpdate = !pauseUpdate;
+  }
 
-	auto& reg = SVCNameRegistry::Instance();
+  auto &reg = SVCNameRegistry::Instance();
 
-	// ----------------------------------------------------------------
-	// 1. ²Ëµ¥À¸
-	// ----------------------------------------------------------------
-	if (ImGui::BeginMenuBar()) {
-		if (ImGui::BeginMenu("File")) {
-			if (ImGui::MenuItem("Clear Log")) {
-				logBuffer.clear();
-				frozenSnapshot.clear();
-			}
-			ImGui::EndMenu();
-		}
-		if (ImGui::BeginMenu("View")) {
-			ImGui::MenuItem("Pause Updates", "Space", &pauseUpdate);
-			ImGui::MenuItem("Auto-scroll", nullptr, &autoScroll);
-			ImGui::Separator();
-			ImGui::MenuItem("Show Timestamp", nullptr, &showTimestamp);
-			ImGui::MenuItem("Show Arguments", nullptr, &showArgs);
-			ImGui::MenuItem("Show Caller PC", nullptr, &showCallerPC);
-			ImGui::EndMenu();
-		}
-		ImGui::EndMenuBar();
-	}
+  // ----------------------------------------------------------------
+  // 1. èœå•æ 
+  // ----------------------------------------------------------------
+  if (ImGui::BeginMenuBar()) {
+    if (ImGui::BeginMenu("File")) {
+      if (ImGui::MenuItem("Clear Log")) {
+        logBuffer.clear();
+        frozenSnapshot.clear();
+      }
+      ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("View")) {
+      ImGui::MenuItem("Pause Updates", "Space", &pauseUpdate);
+      ImGui::MenuItem("Auto-scroll", nullptr, &autoScroll);
+      ImGui::Separator();
+      ImGui::MenuItem("Show Timestamp", nullptr, &showTimestamp);
+      ImGui::MenuItem("Show Arguments", nullptr, &showArgs);
+      ImGui::MenuItem("Show Caller PC", nullptr, &showCallerPC);
+      ImGui::EndMenu();
+    }
+    ImGui::EndMenuBar();
+  }
 
-	// ----------------------------------------------------------------
-	// 2. ¹¤¾ßÀ¸Óë×´Ì¬
-	// ----------------------------------------------------------------
-	{
-		// ÔİÍ£°´Å¥ (ĞÑÄ¿µÄÑÕÉ«)
-		if (pauseUpdate) {
-			ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-			if (ImGui::Button("RESUME")) pauseUpdate = false;
-		}
-		else {
-			if (ImGui::Button("PAUSE")) pauseUpdate = true;
-		}
-		if (pauseUpdate) ImGui::PopStyleColor(2);
+  // ----------------------------------------------------------------
+  // 2. å·¥å…·æ ä¸çŠ¶æ€
+  // ----------------------------------------------------------------
+  {
+    // æš‚åœæŒ‰é’® (é†’ç›®çš„é¢œè‰²)
+    if (pauseUpdate) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                            ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+      if (ImGui::Button("RESUME"))
+        pauseUpdate = false;
+    } else {
+      if (ImGui::Button("PAUSE"))
+        pauseUpdate = true;
+    }
+    if (pauseUpdate)
+      ImGui::PopStyleColor(2);
 
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(200);
-		ImGui::InputTextWithHint("##filter", "Filter (Name/Hex/Dec)", filterText, sizeof(filterText));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("##filter", "Filter (Name/Hex/Dec)", filterText,
+                             sizeof(filterText));
 
-		ImGui::SameLine();
-		if (ImGui::Button("Clear")) filterText[0] = '\0';
+    ImGui::SameLine();
+    if (ImGui::Button("Clear"))
+      filterText[0] = '\0';
 
-		ImGui::SameLine();
-		//ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-		ImGui::SameLine();
+    ImGui::SameLine();
+    // ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
 
-		ImGui::TextDisabled("Entries: %zu | Names: %zu", logBuffer.size(), reg.Count());
+    ImGui::TextDisabled("Entries: %zu | Names: %zu", logBuffer.size(),
+                        reg.Count());
 
-		if (pauseUpdate) {
-			ImGui::SameLine();
-			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "[FROZEN VIEW]");
-		}
-	}
+    if (pauseUpdate) {
+      ImGui::SameLine();
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "[FROZEN VIEW]");
+    }
+  }
 
-	ImGui::Separator();
+  ImGui::Separator();
 
-	// ----------------------------------------------------------------
-	// 3. ÔİÍ£Âß¼­´¦Àí£º×¥È¡¿ìÕÕ
-	// ----------------------------------------------------------------
-	// µ±×´Ì¬´ÓÔËĞĞ×ªÎªÔİÍ££¬»òÕßÔÚÔİÍ£×´Ì¬ÏÂ buffer ±»Íâ²¿¸Ä±äÊ±
-	if (pauseUpdate) {
-		if (!wasPaused) {
-			// ¸Õ°´ÏÂÔİÍ£µÄÒ»Ë²¼ä£¬°Ñµ±Ç°µÄ snapshot ´æÏÂÀ´
-			frozenSnapshot = logBuffer.snapshot();
-			wasPaused = true;
-		}
-	}
-	else {
-		wasPaused = false;
-		if (!frozenSnapshot.empty()) frozenSnapshot.clear();
-	}
+  // ----------------------------------------------------------------
+  // 3. æš‚åœé€»è¾‘å¤„ç†ï¼šæŠ“å–å¿«ç…§
+  // ----------------------------------------------------------------
+  // å½“çŠ¶æ€ä»è¿è¡Œè½¬ä¸ºæš‚åœï¼Œæˆ–è€…åœ¨æš‚åœçŠ¶æ€ä¸‹ buffer è¢«å¤–éƒ¨æ”¹å˜æ—¶
+  if (pauseUpdate) {
+    if (!wasPaused) {
+      // åˆšæŒ‰ä¸‹æš‚åœçš„ä¸€ç¬é—´ï¼ŒæŠŠå½“å‰çš„ snapshot å­˜ä¸‹æ¥
+      frozenSnapshot = logBuffer.snapshot();
+      wasPaused = true;
+    }
+  } else {
+    wasPaused = false;
+    if (!frozenSnapshot.empty())
+      frozenSnapshot.clear();
+  }
 
-	// ----------------------------------------------------------------
-	// 4. Êı¾İÕ¹Ê¾Âß¼­
-	// ----------------------------------------------------------------
-	int colCount = 4 + (showTimestamp ? 1 : 0) + (showCallerPC ? 1 : 0) + (showArgs ? 5 : 0);
-	ImGuiTableFlags tblFlags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersOuter |
-		ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
-		ImGuiTableFlags_Hideable;
+  // ----------------------------------------------------------------
+  // 4. æ•°æ®å±•ç¤ºé€»è¾‘
+  // ----------------------------------------------------------------
+  int colCount =
+      4 + (showTimestamp ? 1 : 0) + (showCallerPC ? 1 : 0) + (showArgs ? 5 : 0);
+  ImGuiTableFlags tblFlags =
+      ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+      ImGuiTableFlags_BordersOuter | ImGuiTableFlags_BordersInnerV |
+      ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
+      ImGuiTableFlags_Hideable;
 
-	if (ImGui::BeginTable("##svc_table", colCount, tblFlags, ImVec2(0, 0))) {
-		ImGui::TableSetupScrollFreeze(0, 1);
-		ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-		ImGui::TableSetupColumn("SVC", ImGuiTableColumnFlags_WidthFixed, 70.0f);
-		ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-		ImGui::TableSetupColumn("Thread", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-		if (showTimestamp) ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-		if (showCallerPC)  ImGui::TableSetupColumn("PC", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-		if (showArgs) {
-			ImGui::TableSetupColumn("R0", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-			ImGui::TableSetupColumn("R1", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-			ImGui::TableSetupColumn("R2", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-			ImGui::TableSetupColumn("R3", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-			ImGui::TableSetupColumn("SP", ImGuiTableColumnFlags_WidthFixed, 75.0f);
-		}
-		ImGui::TableHeadersRow();
+  if (ImGui::BeginTable("##svc_table", colCount, tblFlags, ImVec2(0, 0))) {
+    ImGui::TableSetupScrollFreeze(0, 1);
+    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+    ImGui::TableSetupColumn("SVC", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Thread", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+    if (showTimestamp)
+      ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+    if (showCallerPC)
+      ImGui::TableSetupColumn("PC", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+    if (showArgs) {
+      ImGui::TableSetupColumn("R0", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+      ImGui::TableSetupColumn("R1", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+      ImGui::TableSetupColumn("R2", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+      ImGui::TableSetupColumn("R3", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+      ImGui::TableSetupColumn("SP", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+    }
+    ImGui::TableHeadersRow();
 
-		// ¾ö¶¨Ê¹ÓÃÊµÊ±ÊÓÍ¼»¹ÊÇ¿ìÕÕ
-		const auto& dataToRender = pauseUpdate ? frozenSnapshot : logBuffer.snapshot();
+    // å†³å®šä½¿ç”¨å®æ—¶è§†å›¾è¿˜æ˜¯å¿«ç…§
+    const auto &dataToRender =
+        pauseUpdate ? frozenSnapshot : logBuffer.snapshot();
 
-		if (!dataToRender.empty()) {
-			static std::chrono::steady_clock::time_point baseTime = dataToRender[0].timestamp;
+    if (!dataToRender.empty()) {
+      static std::chrono::steady_clock::time_point baseTime =
+          dataToRender[0].timestamp;
 
-			// ¹ıÂËÆ¥ÅäÂß¼­
-			bool hasFilter = (filterText[0] != '\0');
-			std::string fStr = filterText;
-			std::transform(fStr.begin(), fStr.end(), fStr.begin(), ::tolower);
+      // è¿‡æ»¤åŒ¹é…é€»è¾‘
+      bool hasFilter = (filterText[0] != '\0');
+      std::string fStr = filterText;
+      std::transform(fStr.begin(), fStr.end(), fStr.begin(), ::tolower);
 
-			ImGuiListClipper clipper;
-			// Èç¹ûÓĞ¹ıÂË£¬²»ÄÜÖ±½ÓÓÃ clipper (ÒòÎªË÷Òı²»Á¬Ğø)£¬ÕâÀïÎªÁËÉî¶ÈÕ¹Ê¾×ö¼òµ¥Ñ­»·
-			// Èç¹û×·Çó¼«ÖÂĞÔÄÜ£¬½¨ÒéÔ¤ÏÈÔÚÔİÍ£/¸üĞÂÊ±Éú³ÉÒ»¸ö filteredIndex ÁĞ±í
-			int displayIdx = 0;
-			for (size_t i = 0; i < dataToRender.size(); ++i) {
-				const auto& rec = dataToRender[i];
+      ImGuiListClipper clipper;
+      // å¦‚æœæœ‰è¿‡æ»¤ï¼Œä¸èƒ½ç›´æ¥ç”¨ clipper
+      // (å› ä¸ºç´¢å¼•ä¸è¿ç»­)ï¼Œè¿™é‡Œä¸ºäº†æ·±åº¦å±•ç¤ºåšç®€å•å¾ªç¯
+      // å¦‚æœè¿½æ±‚æè‡´æ€§èƒ½ï¼Œå»ºè®®é¢„å…ˆåœ¨æš‚åœ/æ›´æ–°æ—¶ç”Ÿæˆä¸€ä¸ª filteredIndex åˆ—è¡¨
+      int displayIdx = 0;
+      for (size_t i = 0; i < dataToRender.size(); ++i) {
+        const auto &rec = dataToRender[i];
 
-				if (hasFilter) {
-					const char* name = reg.Lookup(rec.svc);
-					std::string nStr = name ? name : "";
-					std::transform(nStr.begin(), nStr.end(), nStr.begin(), ::tolower);
-					char hexBuf[16]; snprintf(hexBuf, sizeof(hexBuf), "0x%x", rec.svc);
+        if (hasFilter) {
+          const char *name = reg.Lookup(rec.svc);
+          std::string nStr = name ? name : "";
+          std::transform(nStr.begin(), nStr.end(), nStr.begin(), ::tolower);
+          char hexBuf[16];
+          snprintf(hexBuf, sizeof(hexBuf), "0x%x", rec.svc);
 
-					if (nStr.find(fStr) == std::string::npos &&
-						std::string(hexBuf).find(fStr) == std::string::npos)
-						continue;
-				}
+          if (nStr.find(fStr) == std::string::npos &&
+              std::string(hexBuf).find(fStr) == std::string::npos)
+            continue;
+        }
 
-				RenderSVCRow(displayIdx++, rec, baseTime, reg, showTimestamp, showCallerPC, showArgs);
-			}
-		}
+        RenderSVCRow(displayIdx++, rec, baseTime, reg, showTimestamp,
+                     showCallerPC, showArgs);
+      }
+    }
 
-		// ×Ô¶¯¹ö¶¯ (½öÔÚÎ´ÔİÍ£ÇÒ¿ªÆô×Ô¶¯¹ö¶¯Ê±ÉúĞ§)
-		if (!pauseUpdate && autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f) {
-			ImGui::SetScrollHereY(1.0f);
-		}
+    // è‡ªåŠ¨æ»šåŠ¨ (ä»…åœ¨æœªæš‚åœä¸”å¼€å¯è‡ªåŠ¨æ»šåŠ¨æ—¶ç”Ÿæ•ˆ)
+    if (!pauseUpdate && autoScroll &&
+        ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 10.0f) {
+      ImGui::SetScrollHereY(1.0f);
+    }
 
-		ImGui::EndTable();
-	}
-	ImGui::End();
+    ImGui::EndTable();
+  }
+  ImGui::End();
 }

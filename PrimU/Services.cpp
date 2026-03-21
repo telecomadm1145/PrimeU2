@@ -14,6 +14,25 @@ struct Reg {
 public:
   Reg() {
     // ── 线程 / 同步 ──
+    // Thread
+    REGISTER_HANDLER(SDKLIB_OSCreateThread, HANDLE_IMPLEMENTED,
+                     "OSCreateThread", OSCreateThread);
+    REGISTER_HANDLER(SDKLIB_OSTerminateThread, HANDLE_IMPLEMENTED,
+                     "OSTerminateThread", OSTerminateThread);
+    REGISTER_HANDLER(SDKLIB_OSSetThreadPriority, HANDLE_IMPLEMENTED,
+                     "OSSetThreadPriority", OSSetThreadPriority);
+    REGISTER_HANDLER(SDKLIB_OSGetThreadPriority, HANDLE_IMPLEMENTED,
+                     "OSGetThreadPriority", OSGetThreadPriority);
+    REGISTER_HANDLER(SDKLIB_OSSuspendThread, HANDLE_IMPLEMENTED,
+                     "OSSuspendThread", OSSuspendThread);
+    REGISTER_HANDLER(SDKLIB_OSResumeThread, HANDLE_IMPLEMENTED,
+                     "OSResumeThread", OSResumeThread);
+    REGISTER_HANDLER(SDKLIB_OSWakeUpThread, HANDLE_IMPLEMENTED,
+                     "OSWakeUpThread", OSWakeUpThread);
+    REGISTER_HANDLER(SDKLIB_OSExitThread, HANDLE_IMPLEMENTED, "OSExitThread",
+                     OSExitThread);
+    REGISTER_HANDLER(SDKLIB_OSSleep, HANDLE_IMPLEMENTED, "OSSleep", OSSleep);
+
     // Semaphore
     REGISTER_HANDLER(SDKLIB_OSCreateSemaphore, HANDLE_IMPLEMENTED,
                      "OSCreateSemaphore", OSCreateSemaphore);
@@ -24,35 +43,49 @@ public:
     REGISTER_HANDLER(SDKLIB_OSCloseSemaphore, HANDLE_IMPLEMENTED,
                      "OSCloseSemaphore", OSCloseSemaphore);
 
-    REGISTER_HANDLER(SDKLIB_OSCreateThread, HANDLE_IMPLEMENTED,
-                     "OSCreateThread", OSCreateThread);
-    REGISTER_HANDLER(SDKLIB_OSSetThreadPriority, HANDLE_IMPLEMENTED,
-                     "OSSetThreadPriority", OSSetThreadPriority);
-    REGISTER_HANDLER(SDKLIB_OSSuspendThread, HANDLE_NAMEONLY, "OSSuspendThread",
-                     OSSuspendThread);
-    REGISTER_HANDLER(SDKLIB_OSResumeThread, HANDLE_NAMEONLY, "OSResumeThread",
-                     OSResumeThread);
-    REGISTER_HANDLER(SDKLIB_OSSleep, HANDLE_IMPLEMENTED, "OSSleep", OSSleep);
+    // Event
     REGISTER_HANDLER(SDKLIB_OSCreateEvent, HANDLE_IMPLEMENTED, "OSCreateEvent",
                      OSCreateEvent);
-    REGISTER_HANDLER(SDKLIB_OSWaitForEvent, HANDLE_NAMEONLY, "OSWaitForEvent",
-                     OSWaitForEvent);
+    REGISTER_HANDLER(SDKLIB_OSWaitForEvent, HANDLE_IMPLEMENTED,
+                     "OSWaitForEvent", OSWaitForEvent);
     REGISTER_HANDLER(SDKLIB_OSSetEvent, HANDLE_IMPLEMENTED, "OSSetEvent",
                      OSSetEvent);
     REGISTER_HANDLER(SDKLIB_OSResetEvent, HANDLE_IMPLEMENTED, "OSResetEvent",
                      OSResetEvent);
     REGISTER_HANDLER(SDKLIB_OSCloseEvent, HANDLE_IMPLEMENTED, "OSCloseEvent",
                      OSCloseEvent);
+
+    // Critical Section
     REGISTER_HANDLER(SDKLIB_OSInitCriticalSection, HANDLE_IMPLEMENTED,
                      "OSInitCriticalSection", OSInitCriticalSection);
     REGISTER_HANDLER(SDKLIB_OSEnterCriticalSection, HANDLE_IMPLEMENTED,
                      "OSEnterCriticalSection", OSEnterCriticalSection);
     REGISTER_HANDLER(SDKLIB_OSLeaveCriticalSection, HANDLE_IMPLEMENTED,
                      "OSLeaveCriticalSection", OSLeaveCriticalSection);
+    REGISTER_HANDLER(SDKLIB_OSDeleteCriticalSection, HANDLE_IMPLEMENTED,
+                     "OSDeleteCriticalSection", OSDeleteCriticalSection);
+
+    // Message Queue
+    REGISTER_HANDLER(SDKLIB_OSCreateMsgQue, HANDLE_IMPLEMENTED,
+                     "OSCreateMsgQue", OSCreateMsgQue);
+    REGISTER_HANDLER(SDKLIB_OSPostMsgQue, HANDLE_IMPLEMENTED, "OSPostMsgQue",
+                     OSPostMsgQue);
+    REGISTER_HANDLER(SDKLIB_OSSendMsgQue, HANDLE_IMPLEMENTED, "OSSendMsgQue",
+                     OSSendMsgQue);
+    REGISTER_HANDLER(SDKLIB_OSPeekMsgQue, HANDLE_IMPLEMENTED, "OSPeekMsgQue",
+                     OSPeekMsgQue);
+    REGISTER_HANDLER(SDKLIB_OSGetMsgQue, HANDLE_IMPLEMENTED, "OSGetMsgQue",
+                     OSGetMsgQue);
+    REGISTER_HANDLER(SDKLIB_OSCloseMsgQue, HANDLE_IMPLEMENTED, "OSCloseMsgQue",
+                     OSCloseMsgQue);
 
     // ── 中断 / 电源 ──
     REGISTER_HANDLER(SDKLIB_InterruptInitialize, HANDLE_NAMEONLY,
                      "InterruptInitialize", InterruptInitialize);
+    REGISTER_HANDLER(SDKLIB_InterruptMask, HANDLE_NAMEONLY, "InterruptMask",
+                     InterruptMask);
+    REGISTER_HANDLER(SDKLIB_InterruptDisable, HANDLE_NAMEONLY,
+                     "InterruptDisable", InterruptDisable);
     REGISTER_HANDLER(SDKLIB_InterruptDone, HANDLE_NAMEONLY, "InterruptDone",
                      InterruptDone);
     REGISTER_HANDLER(SDKLIB_SysPowerOff, HANDLE_NAMEONLY, "SysPowerOff",

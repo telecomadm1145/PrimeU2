@@ -342,9 +342,9 @@ enum ui_event_type_e : int {
 	UI_EVENT_TYPE_TOUCH = 0xf,
 
 	UI_EVENT_TYPE_KEY_BATCH = 0x100010,
-	
+
 	UI_EVENT_TYPE_SYS_TIMER = 0x4000,
-	
+
 	UI_EVENT_TYPE_DEVICE_TIMER = 0x20,
 
 	UI_EVENT_TYPE_SYSTEM = 0x100,
@@ -491,5 +491,6 @@ struct ui_event_prime_s {
 
 void EnqueueEvent(UIMultipressEvent uime);
 void EnqueueSpecial(int val);
+void InputText(wchar_t wc);
 
 void TouchUpdate(int x, int y, int finger_id, ui_event_type_e status);

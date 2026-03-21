@@ -19,6 +19,8 @@ uint32_t GetSysTime(SystemServiceArguments *args);
 uint32_t SysPowerOff(SystemServiceArguments *args);
 uint32_t BatteryLowCheck(SystemServiceArguments *args);
 uint32_t InterruptInitialize(SystemServiceArguments *args);
+uint32_t InterruptMask(SystemServiceArguments *args);
+uint32_t InterruptDisable(SystemServiceArguments *args);
 uint32_t InterruptDone(SystemServiceArguments *args);
 uint32_t GetEvent(SystemServiceArguments *args);
 uint32_t GetMasterIDInfo(SystemServiceArguments *args);
@@ -41,25 +43,43 @@ uint32_t _ReadFile(SystemServiceArguments *args);
 uint32_t FSGetDiskRoomState(SystemServiceArguments *args);
 
 // ── svc_thread.cpp ──
+// Thread
 uint32_t OSCreateThread(SystemServiceArguments *args);
+uint32_t OSTerminateThread(SystemServiceArguments *args);
 uint32_t OSSetThreadPriority(SystemServiceArguments *args);
-uint32_t OSSleep(SystemServiceArguments *args);
+uint32_t OSGetThreadPriority(SystemServiceArguments *args);
 uint32_t OSSuspendThread(SystemServiceArguments *args);
 uint32_t OSResumeThread(SystemServiceArguments *args);
-uint32_t OSInitCriticalSection(SystemServiceArguments *args);
-uint32_t OSEnterCriticalSection(SystemServiceArguments *args);
-uint32_t OSLeaveCriticalSection(SystemServiceArguments *args);
-uint32_t OSCreateEvent(SystemServiceArguments *args);
-uint32_t OSWaitForEvent(SystemServiceArguments *args);
-uint32_t OSSetEvent(SystemServiceArguments *args);
-uint32_t OSResetEvent(SystemServiceArguments *args);
-uint32_t OSCloseEvent(SystemServiceArguments *args);
+uint32_t OSWakeUpThread(SystemServiceArguments *args);
+uint32_t OSExitThread(SystemServiceArguments *args);
+uint32_t OSSleep(SystemServiceArguments *args);
 
 // Semaphore
 uint32_t OSCreateSemaphore(SystemServiceArguments *args);
 uint32_t OSWaitForSemaphore(SystemServiceArguments *args);
 uint32_t OSReleaseSemaphore(SystemServiceArguments *args);
 uint32_t OSCloseSemaphore(SystemServiceArguments *args);
+
+// Event
+uint32_t OSCreateEvent(SystemServiceArguments *args);
+uint32_t OSWaitForEvent(SystemServiceArguments *args);
+uint32_t OSSetEvent(SystemServiceArguments *args);
+uint32_t OSResetEvent(SystemServiceArguments *args);
+uint32_t OSCloseEvent(SystemServiceArguments *args);
+
+// Critical Section
+uint32_t OSInitCriticalSection(SystemServiceArguments *args);
+uint32_t OSEnterCriticalSection(SystemServiceArguments *args);
+uint32_t OSLeaveCriticalSection(SystemServiceArguments *args);
+uint32_t OSDeleteCriticalSection(SystemServiceArguments *args);
+
+// Message Queue
+uint32_t OSCreateMsgQue(SystemServiceArguments *args);
+uint32_t OSPostMsgQue(SystemServiceArguments *args);
+uint32_t OSSendMsgQue(SystemServiceArguments *args);
+uint32_t OSPeekMsgQue(SystemServiceArguments *args);
+uint32_t OSGetMsgQue(SystemServiceArguments *args);
+uint32_t OSCloseMsgQue(SystemServiceArguments *args);
 
 // ── svc_filesystem.cpp ──
 uint32_t __afopen(SystemServiceArguments *args);

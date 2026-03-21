@@ -7,42 +7,45 @@
 #include <thread>
 #include <unordered_map>
 
-
 class Thread;
 
-class StateManager {
+// Windows.h defines macros that collide with our method names
+#undef GetCurrentThread
+#undef GetCurrentThreadId
+#undef SetThreadPriority
+
+/// Manages all emulated guest threads.
+/// Renamed from the original `StateManager` to reflect its actual
+/// responsibility.
+class ThreadManager {
 public:
-	static StateManager* GetInstance() {
-		return !_instance ? _instance = new StateManager : _instance;
-	}
+  static ThreadManager *GetInstance() {
+    return !_instance ? _instance = new ThreadManager : _instance;
+  }
 
-	int NewThread(VirtPtr start, uint32_t arg = 0,
-		uint8_t priority = THREAD_PRIORITY_NORMAL,
-		size_t stackSize = 0x2000);
+  int NewThread(VirtPtr start, uint32_t arg = 0,
+                uint8_t priority = THREAD_PRIORITY_NORMAL,
+                size_t stackSize = 0x2000);
 
-	int SetThreadPriority(int threadId, uint8_t priority);
-	Thread* GetThread(int threadId);
+  int SetThreadPriority(int threadId, uint8_t priority);
+  Thread *GetThread(int threadId);
 
-	// Called from within an emulated thread to get its active Thread back-pointer
-	Thread* GetCurrentThread();
-	int GetCurrentThreadId();
-
-	bool interrupting = false;
-	bool pausing = false;
-	VirtPtr interruptPC = 0;
+  // Called from within an emulated thread to get its active Thread back-pointer
+  Thread *GetCurrentThread();
+  int GetCurrentThreadId();
 
 private:
-	StateManager() {}
-	~StateManager() {}
-	StateManager(StateManager const&) = delete;
-	void operator=(StateManager const&) = delete;
-	static StateManager* _instance;
+  ThreadManager() {}
+  ~ThreadManager() {}
+  ThreadManager(ThreadManager const &) = delete;
+  void operator=(ThreadManager const &) = delete;
+  static ThreadManager *_instance;
 
-	std::mutex _threadMapMutex;
-	std::unordered_map<int, Thread*> _threads;
-	friend class Thread;
+  std::mutex _threadMapMutex;
+  std::unordered_map<int, Thread *> _threads;
+  friend class Thread;
 };
 
-#define sThreadHandler StateManager::GetInstance()
+#define sThreadHandler ThreadManager::GetInstance()
 
 #endif

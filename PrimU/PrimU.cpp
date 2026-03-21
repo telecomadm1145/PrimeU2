@@ -5,6 +5,7 @@
 #include "executable.h"
 #include "executor.h"
 #include "stdafx.h"
+#include "svclogwin.h"
 
 
 ISyncFactory *g_SyncFactory = new Win32SyncFactory();
@@ -15,7 +16,7 @@ int main(int argc, char **argv) {
   //     printf("Usage: %s armfir.elf\n", argv[0]);
   //     return 1;
   // }
-
+    SVCNameRegistry::Instance().LoadFromFile("syscalls_sdk.json");
   Executable exec((char *)"prime_data\\A\\programs\\misc\\armfir.elf");
 
   if (exec.get_state() == EXEC_LOAD_FAILED) {

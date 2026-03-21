@@ -45,6 +45,8 @@ void dump_hex(const void* data, size_t size)
         printf("|\n");
     }
 }
+#define TRANSPARENT
+
 namespace {
 
     struct HpInterOp;
@@ -72,7 +74,11 @@ namespace {
             g_hp = this;
 
             pipe = CreateNamedPipeA(
+#ifdef TRANSPARENT
+                "\\\\.\\pipe\\primu",
+#else
                 "\\\\.\\pipe\\hp89",
+#endif 
                 PIPE_ACCESS_DUPLEX,
                 PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
                 1,
@@ -121,7 +127,11 @@ namespace {
             printf("from Device\n");
             dump_hex(dat, sz);
             if (!dat || sz == 0) return;
+#ifdef TRANSPARENT
+            writePipe(dat,sz);
+#else
             writePipe((char*)dat + 1, sz - 1);
+#endif // TRANSPARENT
             //const uint8_t* p = reinterpret_cast<const uint8_t*>(dat);
             //uint8_t seq = p[0];
             //const uint8_t* payload = (sz > 1) ? (p + 1) : nullptr;
@@ -184,6 +194,18 @@ namespace {
                 // 分配 64 字节 guest buffer
                 sMemoryManager->DyanmicAlloc(&usb_buf, 64);
             }
+#ifdef TRANSPARENT
+            memcpy(__GET(char*, usb_buf), dat, 64);
+            printf("from Host\n");
+            dump_hex(dat,64);
+            // 调 guest 回调：参数按 (bufPtr, len) 传入
+            // ExecuteCustomCode 的真实签名你项目里是什么就换成什么
+            if (!guestThread)
+                guestThread = new Thread(0, 0, 0, 0x1000);
+            guestThread->ExecuteCustomCode(usb_in_cb, usb_buf, 64);
+            return;
+#endif // TRANSPARENT
+
 
             const uint8_t* src = reinterpret_cast<const uint8_t*>(dat);
             uint8_t seq = 0;
@@ -192,7 +214,7 @@ namespace {
             while (off < sz) {
                 size_t chunk = std::min<size_t>(63, sz - off);
 
-                uint8_t pkt[64];
+                uint8_t pkt[64]; // todo
                 pkt[0] = seq++;
                 std::memcpy(pkt + 1, src + off, chunk);
 

@@ -7,14 +7,10 @@
 #include "stdafx.h"
 #include <unicorn/unicorn.h>
 
-enum InterruptID : uint32_t;
-
-class Thread;
-struct InterruptHandle;
-
-void interrupt_hook(uc_engine *uc, uint64_t address, uint32_t size,
-                    void *user_data);
-
+/// The top-level emulator bootstrap.
+/// Initializes memory, loads the executable, creates the main thread,
+/// and starts the InterruptController. Hook registration is delegated
+/// to SvcDispatcher and FaultHandler.
 class Executor {
 public:
   static Executor *get_instance() {
@@ -26,21 +22,19 @@ public:
   void Execute();
   bool Cleanup();
 
+  /// Register SVC + fault hooks on a uc_engine.
+  /// Called by Thread::ThreadProc and Thread::ExecuteCustomCode.
   void RegisterHooksForEngine(uc_engine *uc);
 
   uc_err GetLastError() { return m_err; }
   uc_engine *GetUcInstance() { return m_uc; }
 
-  friend void ::interrupt_hook(uc_engine *uc, uint64_t address, uint32_t size,
-                               void *user_data);
-
 private:
   Executor() : m_uc(nullptr) {}
-  bool InitInterrupts();
+  bool InitMemory();
 
   static Executor *m_instance;
   uc_engine *m_uc;
-  uc_hook m_interrupt_hook;
   uc_err m_err;
 
   Executable *m_exec;
@@ -53,9 +47,6 @@ private:
 public:
   Executor(Executor const &) = delete;
   void operator=(Executor const &) = delete;
-
-private:
-  std::map<InterruptID, InterruptHandle *> m_interrupts;
 };
 
 #define sExecutor Executor::get_instance()

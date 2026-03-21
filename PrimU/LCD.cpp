@@ -389,7 +389,6 @@ LCD::LCD() {
 		// Create a new entry in the map and launch the thread
 		g_LcdWindowMap[this].isExiting = false;
 		g_LcdWindowMap[this].windowThread = std::thread(WindowThreadProc, this);
-		SVCNameRegistry::Instance().LoadFromFile("syscalls_sdk.json");
 		std::thread([&]() {
 			SDL_Init(0);
 			bool busy = false;
@@ -1233,6 +1232,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			printf("[KBD] Unhandled key: %d\n", wParam);
 		}
 		break; // Let other keys be handled by DefWindowProc
+	}
+	case WM_CHAR: {
+		InputText(wParam);
+		break;
 	}
 	case WM_KEYUP: {
 		static std::map<int, int> numpad_mapping = ([]() {

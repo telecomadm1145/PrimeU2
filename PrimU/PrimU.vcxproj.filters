@@ -36,6 +36,9 @@
     <Filter Include="Source Files\System\IO">
       <UniqueIdentifier>{60a08797-db34-4fab-b6cd-8555bd5a20d2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\PrimInterop">
+      <UniqueIdentifier>{343c2a5e-a78e-4825-9527-d7d67e48c54c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
@@ -140,6 +143,30 @@
     <ClInclude Include="svclogwin.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="FaultHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="InterruptController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SvcDispatcher.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SyncPrimitives.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Win32SyncPrimitives.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TimerController.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HidPassthroughUI.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HidPassthrough.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -219,6 +246,30 @@
     </ClCompile>
     <ClCompile Include="HpInterOp.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FaultHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="InterruptController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SvcDispatcher.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TimerController.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Win32SyncPrimitives.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HidPassthroughUI.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HidPassthrough.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TextInput.cpp">
+      <Filter>Source Files\PrimInterop</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

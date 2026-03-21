@@ -174,10 +174,15 @@
     <ClInclude Include="common.h" />
     <ClInclude Include="executable.h" />
     <ClInclude Include="executor.h" />
+    <ClInclude Include="FaultHandler.h" />
     <ClInclude Include="handlers.h" />
+    <ClInclude Include="HidPassthrough.h" />
+    <ClInclude Include="HidPassthroughUI.h" />
+    <ClInclude Include="InterruptController.h" />
     <ClInclude Include="log.h" />
     <ClInclude Include="logbuf.h" />
     <ClInclude Include="PrimeObj.h" />
+    <ClInclude Include="SvcDispatcher.h" />
     <ClInclude Include="svclogwin.h" />
     <ClInclude Include="svc_common.h" />
     <ClInclude Include="imconfig.h" />
@@ -196,19 +201,25 @@
     <ClInclude Include="PELoader.h" />
     <ClInclude Include="Marshal.h" />
     <ClInclude Include="Services.h" />
+    <ClInclude Include="SyncPrimitives.h" />
     <ClInclude Include="Thread.h" />
     <ClInclude Include="ThreadHandler.h" />
+    <ClInclude Include="TimerController.h" />
     <ClInclude Include="ui.h" />
     <ClInclude Include="vprintf.h" />
     <ClInclude Include="InterruptHandler.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="interrupts.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="Win32SyncPrimitives.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dbgout.cpp" />
     <ClCompile Include="executable.cpp" />
     <ClCompile Include="executor.cpp" />
+    <ClCompile Include="FaultHandler.cpp" />
+    <ClCompile Include="HidPassthrough.cpp" />
+    <ClCompile Include="HidPassthroughUI.cpp" />
     <ClCompile Include="HpInterOp.cpp" />
     <ClCompile Include="imgui.cpp" />
     <ClCompile Include="imgui_demo.cpp" />
@@ -217,21 +228,26 @@
     <ClCompile Include="imgui_impl_sdlrenderer2.cpp" />
     <ClCompile Include="imgui_tables.cpp" />
     <ClCompile Include="imgui_widgets.cpp" />
+    <ClCompile Include="InterruptController.cpp" />
     <ClCompile Include="LCD.cpp" />
     <ClCompile Include="MemoryChunk.cpp" />
     <ClCompile Include="MemoryManager.cpp" />
     <ClCompile Include="PELoader.cpp" />
     <ClCompile Include="PrimU.cpp" />
     <ClCompile Include="Services.cpp" />
+    <ClCompile Include="SvcDispatcher.cpp" />
     <ClCompile Include="svc_common.cpp" />
     <ClCompile Include="svc_filesystem.cpp" />
     <ClCompile Include="svc_thread.cpp" />
     <ClCompile Include="svc_system.cpp" />
     <ClCompile Include="MemoryBlock.cpp" />
+    <ClCompile Include="TextInput.cpp" />
     <ClCompile Include="Thread.cpp" />
     <ClCompile Include="ThreadHandler.cpp" />
+    <ClCompile Include="TimerController.cpp" />
     <ClCompile Include="vprintf.cpp" />
     <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="Win32SyncPrimitives.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
