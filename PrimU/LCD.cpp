@@ -444,7 +444,7 @@ LCD::LCD() {
 			while (1) {
 				SDL_Event event{};
 				busy = false;
-				if (!SDL_PollEvent(&event))
+				if (!SDL_WaitEvent(&event))
 					continue;
 				busy = true;
 				if (event.type == frame_event) {
@@ -1140,7 +1140,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		// Draw the LCD buffer first if it exists
 		// 如果 LCD 缓冲区存在，首先绘制它
 		if (lcd && lcd->buffer) {
-			uint32_t* tempBuffer = new uint32_t[lcd->xRes * lcd->yRes];
+			static std::vector<uint32_t> tempBuffer;
+			if (tempBuffer.size() != static_cast<size_t>(lcd->xRes * lcd->yRes)) {
+				tempBuffer.resize(lcd->xRes * lcd->yRes);
+			}
 			struct RGB555 {
 				uint16_t b : 8;
 				uint16_t g : 8;
@@ -1154,6 +1157,8 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				uint8_t a;
 			};
 
+			auto level = sLCDHandler->brightness_level / 4.0 + 0.25; // 亮度等级
+
 			for (int i = 0; i < lcd->xRes * lcd->yRes; i++) {
 				RGB555 pixel =
 					*reinterpret_cast<RGB555*>(&((uint8_t*)lcd->buffer)[i * 4]);
@@ -1163,7 +1168,6 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 				uint8_t g = pixel.g;
 				uint8_t b = pixel.b;
 
-				auto level = sLCDHandler->brightness_level / 4.0 + 0.25; // 亮度等级
 				r = static_cast<uint8_t>(r * level);
 				g = static_cast<uint8_t>(g * level);
 				b = static_cast<uint8_t>(b * level);
@@ -1180,8 +1184,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 			bi.bmiHeader.biBitCount = 32;
 			bi.bmiHeader.biCompression = BI_RGB;
 			StretchDIBits(hdc, 0, 0, lcd->xRes, lcd->yRes, 0, 0, lcd->xRes, lcd->yRes,
-				tempBuffer, &bi, DIB_RGB_COLORS, SRCCOPY);
-			delete[] tempBuffer;
+				tempBuffer.data(), &bi, DIB_RGB_COLORS, SRCCOPY);
 		}
 
 		EndPaint(hwnd, &ps);
