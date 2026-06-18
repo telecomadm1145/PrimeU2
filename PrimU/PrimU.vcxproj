@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -176,8 +176,7 @@
     <ClInclude Include="executor.h" />
     <ClInclude Include="FaultHandler.h" />
     <ClInclude Include="handlers.h" />
-    <ClInclude Include="HidPassthrough.h" />
-    <ClInclude Include="HidPassthroughUI.h" />
+
     <ClInclude Include="InterruptController.h" />
     <ClInclude Include="log.h" />
     <ClInclude Include="logbuf.h" />
@@ -212,14 +211,16 @@
     <ClInclude Include="interrupts.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="Win32SyncPrimitives.h" />
+    <ClInclude Include="GdbStub.h" />
+    <ClInclude Include="CommandServer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dbgout.cpp" />
     <ClCompile Include="executable.cpp" />
     <ClCompile Include="executor.cpp" />
     <ClCompile Include="FaultHandler.cpp" />
-    <ClCompile Include="HidPassthrough.cpp" />
-    <ClCompile Include="HidPassthroughUI.cpp" />
+    <ClCompile Include="GdbStub.cpp" />
+
     <ClCompile Include="HpInterOp.cpp" />
     <ClCompile Include="imgui.cpp" />
     <ClCompile Include="imgui_demo.cpp" />
@@ -241,13 +242,14 @@
     <ClCompile Include="svc_thread.cpp" />
     <ClCompile Include="svc_system.cpp" />
     <ClCompile Include="MemoryBlock.cpp" />
-    <ClCompile Include="TextInput.cpp" />
+
     <ClCompile Include="Thread.cpp" />
     <ClCompile Include="ThreadHandler.cpp" />
     <ClCompile Include="TimerController.cpp" />
     <ClCompile Include="vprintf.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="Win32SyncPrimitives.cpp" />
+    <ClCompile Include="CommandServer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

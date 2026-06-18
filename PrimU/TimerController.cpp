@@ -127,6 +127,7 @@ void TimerController::OnTconWrite(uint32_t newTcon) {
 
 			_timers[i].thread =
 				std::thread(&TimerController::TimerThreadFunc, this, i);
+			_timers[i].thread.detach();
 		}
 		else if (wasRunning && !nowRunning) {
 			// Timer just stopped

@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
-
+#include <atomic>
 
 #include "MemoryBlock.h"
 #include "MemoryChunk.h"
@@ -41,6 +41,8 @@ public:
   bool isVAddrAllocated(VirtPtr virtPtr);
 
   size_t GetAllocSize(VirtPtr addr);
+
+  std::atomic<size_t> HeapAllocCount{ 0 };
 
 private:
   MemoryManager();

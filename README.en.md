@@ -228,6 +228,44 @@ PrimU2 includes a built-in ImGui-based debugging toolkit:
 
 ---
 
+## MCP Server & Remote Control
+
+The emulator now natively integrates a TCP remote control module and a standard **Model Context Protocol (MCP)** server, enabling automated control by AI coding assistants or external applications.
+
+### 1. Emulator TCP Command Server
+When the emulator starts, a background thread opens a TCP listener on **`127.0.0.1:4321`**. It processes string commands terminated with `\n`:
+* `key <keycode> <action>`: Inject a physical key event (e.g. `key 0x59 press`, where `action` can be `press`, `down`, or `up`).
+* `touch <x> <y> <action>`: Simulate a screen touch event (320x240 coordinates, where `action` can be `down`, `move`, or `up`).
+* `screenshot`: Capture the LCD framebuffer, returning a BGRX binary stream prefixed with a 4-byte big-endian size header.
+* `state`: Query the current simulator connection status.
+
+### 2. Python MCP Bridge Server
+Located at the root of the workspace, **[mcp_server.py](file:///c:/Users/Administrator/Downloads/PrimeU-master/mcp_server.py)** implements the standard stdio JSON-RPC protocol. It exposes the following tools to the AI assistant:
+* **`press_button`**: Press a single physical key. Supports key name aliases (case-insensitive, e.g. `Apps`, `Home`, `Enter`, `Esc`, digits, math operators, etc.).
+* **`press_button_batch`** (Batch Typing): Takes an array of keys (e.g., `["1", "+", "2", "enter"]`) and presses them in sequence with an optional delay (`delay_ms`, default 100ms) to prevent key queue overflow.
+* **`get_buttons`**: Retrieve all valid physical calculator buttons and their descriptions.
+* **`touch_screen`**: Tap or drag on the LCD touchscreen.
+* **`get_screen`**: Grab the calculator display, returning it as a Base64-encoded PNG and saving a copy locally as `screenshot.png`.
+* **`get_state`**: Query the emulator running state.
+
+### 3. Registering in AI Clients
+To use the MCP server in IDE plugins, Claude Desktop, or other AI agents, register it in the configuration file (e.g., `.gemini/settings.json` or `claude_desktop_config.json`):
+
+```json
+"mcpServers": {
+  "primeu": {
+    "command": "python",
+    "args": [
+      "C:\\path\\to\\PrimeU-master\\mcp_server.py"
+    ]
+  }
+}
+```
+
+Once reloaded, the AI can programmatically interact with the simulator (e.g., perform calculations, verify display output, etc.).
+
+---
+
 ## Project Structure
 
 ```

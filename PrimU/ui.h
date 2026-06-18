@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "common.h"
 
 /**
@@ -491,6 +491,6 @@ struct ui_event_prime_s {
 
 void EnqueueEvent(UIMultipressEvent uime);
 void EnqueueSpecial(int val);
-void InputText(wchar_t wc);
+
 
 void TouchUpdate(int x, int y, int finger_id, ui_event_type_e status);

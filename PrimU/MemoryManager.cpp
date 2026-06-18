@@ -216,6 +216,7 @@ ErrorCode MemoryManager::HeapAlloc(VirtPtr* out, size_t size)
 		// 记录已分配（key是用户指针，value是用户大小）
 		_heapAlloc.emplace(userPtr, alignedUserSize);
 
+		HeapAllocCount += totalAllocSize;
 		*out = userPtr;
 		return ERROR_OK;
 	}
@@ -253,6 +254,7 @@ ErrorCode MemoryManager::HeapFree(VirtPtr addr)
 
 		// 放回空闲并合并邻接（归还的是包含 cookie 的整个块）
 		CoalesceAround(blockStart, totalSize);
+		HeapAllocCount -= totalSize;
 		return ERROR_OK;
 	}
 }

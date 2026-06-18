@@ -228,6 +228,44 @@ PrimU2 内置了基于 ImGui 的调试工具集：
 
 ---
 
+## MCP 服务端与远程控制
+
+模拟器现已原生集成 TCP 远程控制模块，并配备了标准 **Model Context Protocol (MCP)** 服务端，支持 AI 编码助手或外部程序对计算器模拟器进行自动化控制。
+
+### 1. 模拟器 TCP 命令服务端
+当模拟器启动时，后台线程会在本地 **`127.0.0.1:4321`** 开启 TCP 监听。支持以 `\n` 结尾的字符串命令：
+* `key <keycode> <action>`: 注入物理按键（如 `key 0x59 press`，`action` 可为 `press`, `down`, `up`）。
+* `touch <x> <y> <action>`: 模拟屏幕触摸（坐标 320x240，`action` 为 `down`, `move`, `up`）。
+* `screenshot`: 捕获屏幕像素，返回 BGRX 格式的二进制流（带 4 字节大端大小前缀）。
+* `state`: 返回模拟器当前状态。
+
+### 2. Python MCP 桥接服务端
+位于根目录下的 **[mcp_server.py](file:///c:/Users/Administrator/Downloads/PrimeU-master/mcp_server.py)** 实现了标准的 stdio JSON-RPC 协议，向 AI 助手提供了以下封装好的控制工具：
+* **`press_button`**：发送物理按键命令。支持按键别名（不区分大小写，如 `Apps`, `Home`, `Enter`, `Esc`, 数字及运算符号等）。
+* **`press_button_batch`** (批量按键)：传入按键序列（例如 `["1", "+", "2", "enter"]`），在每次按键间留有可选的延迟（`delay_ms`，默认 100ms），防止模拟器内置队列溢出而丢键。
+* **`get_buttons`**：获取计算器上所有支持的按键名字与对应功能的中文/英文简要说明。
+* **`touch_screen`**：点击或拖拽模拟器的 LCD 触摸屏。
+* **`get_screen`**：捕获模拟器当前显示画面，返回 Base64 编码的 PNG，并自动保存一份副本到本地 `screenshot.png`。
+* **`get_state`**：查询模拟器当前的连通状态。
+
+### 3. 在 AI 客户端中注册与使用
+你可以在 IDE 插件、Claude Desktop 或其他支持 MCP 协议的 AI 客户端的配置文件（如 `.gemini/settings.json` 或 `claude_desktop_config.json`）中注册该服务端：
+
+```json
+"mcpServers": {
+  "primeu": {
+    "command": "python",
+    "args": [
+      "C:\\path\\to\\PrimeU-master\\mcp_server.py"
+    ]
+  }
+}
+```
+
+重新加载会话后，AI 即可直接调用上述工具与模拟器计算器进行交互（如清除历史、进行复杂算式输入并抓图确认等）。
+
+---
+
 ## 项目结构
 
 ```

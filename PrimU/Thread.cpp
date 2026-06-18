@@ -1,4 +1,5 @@
-﻿#include "Thread.h"
+#include "Thread.h"
+#include "GdbStub.h"
 #include "ThreadHandler.h"
 
 int Thread::GenerateUniqueId() {
@@ -63,10 +64,24 @@ void Thread::ThreadProc() {
 
   sExecutor->RegisterHooksForEngine(_uc);
 
-  // Main execution loop for this thread's engine
+  // Register this thread with the GDB stub
+  sGdbStub->RegisterThread(this);
+
+  // If this is the first thread and GDB is active, wait for debugger
+  if (_id == 0) {
+    sGdbStub->WaitForDebugger();
+  }
+
+  // Main execution loop
   auto pc = _startPc;
   while (1) {
-    uc_err err = uc_emu_start(_uc, pc, 0, 0, 0);
+    // GDB: block if all-stopped; returns count (0=run, 1=step, -1=exit)
+    int emuCount = sGdbStub->WaitIfHalted(_id);
+    if (emuCount < 0) break;
+
+    g_gdbBpHit = false;
+    uc_err err = uc_emu_start(_uc, pc, 0, 0, (uint32_t)emuCount);
+
     if (err == UC_ERR_INSN_INVALID) {
       uc_reg_read(_uc, UC_ARM_REG_PC, &pc);
       auto pp = __GET(uint32_t *, pc);
@@ -87,6 +102,20 @@ void Thread::ThreadProc() {
       printf("Thread %d emu_start returned: %u (%s)\n", _id, err,
              uc_strerror(err));
       break;
+    }
+
+    uc_reg_read(_uc, UC_ARM_REG_PC, &pc);
+
+    // GDB: breakpoint hit?
+    if (g_gdbBpHit) {
+      g_gdbBpHit = false;
+      sGdbStub->NotifyStop(_uc, GdbStopReason::Breakpoint, g_gdbBpAddr);
+      continue;
+    }
+    // GDB: step complete?
+    if (emuCount == 1) {
+      sGdbStub->NotifyStop(_uc, GdbStopReason::Step, pc);
+      continue;
     }
   }
   printf("Emulated Thread %d exited.\n", _id);

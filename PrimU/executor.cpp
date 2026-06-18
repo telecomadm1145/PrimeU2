@@ -1,7 +1,9 @@
-﻿#include "executor.h"
-
+#include "executor.h"
+#include "CommandServer.h"
+#define ENABLE_GDB_STUB
 #include "FaultHandler.h"
-#include "HidPassthroughUI.h"
+#include "GdbStub.h"
+
 #include "InterruptController.h"
 #include "SvcDispatcher.h"
 #include "Thread.h"
@@ -54,20 +56,42 @@ void Executor::RegisterHooksForEngine(uc_engine *uc) {
   SvcDispatcher::RegisterHook(uc);
   FaultHandler::RegisterHook(uc);
   sTimerController->RegisterHook(uc);
+  // GDB hooks are registered per-Thread in Thread::ThreadProc
+  // via sGdbStub->RegisterThread(this)
 }
 
 void Executor::Execute() {
+  // ── Start GDB stub (if enabled via compile-time or runtime config) ──
+  // Set the environment variable PRIMU_GDB_PORT to a port number to enable,
+  // or define ENABLE_GDB_STUB at compile time.  Default port: 2345.
+  {
+    uint16_t gdbPort = GDB_DEFAULT_PORT;
+    const char *envPort = std::getenv("PRIMU_GDB_PORT");
+    bool enableGdb = false;
+#ifdef ENABLE_GDB_STUB
+    enableGdb = true;
+#endif
+    if (envPort && envPort[0]) {
+      gdbPort = (uint16_t)std::atoi(envPort);
+      enableGdb = true;
+    }
+    if (enableGdb) {
+      sGdbStub->Start(gdbPort);
+    }
+  }
+
   // Start the InterruptController's ISR dispatch thread
   sInterruptController->Start();
 
-  // Launch the USB HID passthrough selection window
-  HidPassthroughUI::Launch();
 
   // Create the main emulation thread
   sThreadHandler->NewThread(m_exec->get_entry(), 0, THREAD_PRIORITY_NORMAL,
                             MEM_STACK_SIZE);
 
   printf("Main emulator executor waiting...\n");
+
+  // Start the TCP Command Server on port 4321
+  CommandServer::Start(4321);
 
   // Keep the main process alive
   while (true) {
@@ -76,7 +100,8 @@ void Executor::Execute() {
 }
 
 bool Executor::Cleanup() {
-  HidPassthroughUI::Shutdown();
+  CommandServer::Stop();
+
   sTimerController->Stop();
   sInterruptController->Stop();
   __check(sMemoryManager->StaticFree(LCD_REGISTER), ERROR_OK, false);

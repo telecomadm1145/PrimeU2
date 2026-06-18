@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -161,10 +161,11 @@
     <ClInclude Include="TimerController.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="HidPassthroughUI.h">
+
+    <ClInclude Include="GdbStub.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="HidPassthrough.h">
+    <ClInclude Include="CommandServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -262,14 +263,12 @@
     <ClCompile Include="Win32SyncPrimitives.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="HidPassthroughUI.cpp">
+
+    <ClCompile Include="GdbStub.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="HidPassthrough.cpp">
+    <ClCompile Include="CommandServer.cpp">
       <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="TextInput.cpp">
-      <Filter>Source Files\PrimInterop</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

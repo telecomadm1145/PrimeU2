@@ -1,7 +1,7 @@
 // svc_system.cpp — 系统级、事件输入、加载器文件、程序管理、设备 I/O handler
 #include "svc_common.h"
 
-#include "HidPassthrough.h"
+
 #include "InterruptController.h"
 #include "LCD.h"
 #include "PELoader.h"
@@ -179,9 +179,7 @@ static constexpr size_t MAX_MULTIPRESS_EVENTS = 8;
 static UIMultipressEvent touch_states[MAX_MULTIPRESS_EVENTS];
 static std::atomic<int> special_event = 0;
 static std::atomic<bool> touch = false;
-static std::atomic<wchar_t> pending_char = 0;
 
-void InputText(wchar_t wc) { pending_char.store(wc); }
 
 void EnqueueEvent(UIMultipressEvent uime) {
   std::lock_guard lg(g_event_lock);
@@ -214,41 +212,7 @@ restart:
       event.event_type = (ui_event_type_e)k;
     return 0;
   }
-  wchar_t wc;
-  if (wc = pending_char.load()) {
-    pending_char.store(0);
-    auto focus = get_text_focus();
-    if (focus) {
-      // Mirror Cwindow__post_text_input_event (0x30697928):
-      // TextInputEvent (0x24 bytes) is stored INLINE at CWindow+0x88.
-      // No DynamicAlloc needed — the slot is a fixed inline field.
-      printf("[TextInput] focus=0x%x wc=U+%04X\n", focus, (unsigned)wc);
 
-      // Build the wchar_t[2] text buffer inline in guest memory.
-      // Re-use a single static 4-byte allocation for the character string.
-      static VirtPtr charBuf = 0;
-      if (!charBuf)
-        sMemoryManager->DyanmicAlloc(&charBuf, 4);
-      auto *charPtr = __GET(wchar_t *, charBuf);
-      charPtr[0] = wc;
-      charPtr[1] = 0;
-
-      // Build TextInputEvent and write it directly into the inline slot
-      // at CWindow+0x88 (= a1+136 in IDA), exactly as the firmware does.
-      //TextInputEvent tie{};
-      //tie.text = charBuf;
-      auto *inlineSlot = __GET(TextInputEvent*, focus + 0x88);
-      // memcpy(inlineSlot, &tie, sizeof(tie));
-      *inlineSlot = {};
-      inlineSlot->text = charBuf;
-      inlineSlot->flags = 0x200;
-      // SetPendingEvent: CWindow+0x2C |= 0x80
-      *__GET(uint32_t *, focus + 0x2C) |= 0x80u;
-
-      event.event_type = UI_EVENT_TYPE_SYS_TIMER;
-      return 0;
-    }
-  }
   {
     std::lock_guard lg(g_event_lock);
     event.event_type = UI_EVENT_TYPE_TOUCH;
@@ -581,47 +545,24 @@ uint32_t DeviceIoControl(SystemServiceArguments *args) {
       return 1;
 
     case 256: {
-      // Query host status: is a downstream HID device attached?
-      bool present = sHidPassthrough->HasAttachedDevice();
-      std::cout << "    +USB Host: Status query -> "
-                << (present ? "device present" : "no device") << "\n";
-      if (out && outlen >= 4) {
-        *(uint32_t *)out = present ? 1 : 0;
-      }
-      if (retlen)
-        *retlen = 4;
-      return present ? 1 : 0;
+      return 0;
     }
 
     case 257: {
-      // IOCTL_USBHOST_GET_DEV_INFO: get attached HID device info
-      // Output: UsbHostDevInfo (0x10 bytes)
-      std::cout << "    +USB Host: GetDevInfo\n";
-      if (sHidPassthrough->GetDeviceInfo(out, outlen)) {
-        if (retlen)
-          *retlen = 0x10;
-        return 1;
-      }
-      return 0; // no device attached
+      return 0;
     }
 
     case 258: {
-      // IOCTL_USBHOST_SEND_DATA: send output report to attached HID device
       std::cout << "    +USB Host: SendData " << size << " bytes\n";
-      if (sHidPassthrough->SendData(in, size))
-        return 1;
-      // fallback to named pipe
       if (usb_out_cb)
         usb_out_cb(in, size);
       return 1;
     }
 
     case 259: {
-      // USBDRV_IO_SET_REVCALLBACK: register receive callback
       std::cout << "    +USB Host: Set receive callback -> 0x" << std::hex
                 << (uint32_t)args->r2 << std::dec << "\n";
       usb_in_cb = args->r2;
-      sHidPassthrough->SetReceiveCallback(args->r2);
       return 1;
     }
 

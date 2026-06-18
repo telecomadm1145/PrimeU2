@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <cstdint>
 #include "MemoryManager.h"
 
@@ -58,6 +58,7 @@ public:
     static LCDHandler* GetInstance() { return !_instance ? _instance = new LCDHandler : _instance; }
 
     VirtPtr GetActiveLCDPtr() const;
+    LCD* GetActiveLCD() const { return _activeLCD; }
 
     uint16_t brightness_level = 2;
 

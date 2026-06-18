@@ -1,7 +1,4 @@
 ﻿// HpPrimeUsbClient.cs
-// Requires: NuGet package "MadWizard.WinUSBNet" or similar WinUSB wrapper
-// Or use raw P/Invoke as shown below
-
 using System;
 using System.IO;
 using System.IO.Pipes;
@@ -10,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32.SafeHandles;
 
 namespace HpPrimeUsb
 {
@@ -122,33 +120,21 @@ namespace HpPrimeUsb
     }
 
     /// <summary>
-    /// Real WinUSB transport using DeviceIoControl (matching HP Prime's protocol)
+    /// HID Transport for system default HidUsb driver
+    /// Automatically detects HP Prime by VID and PID
     /// </summary>
-    public class WinUsbTransport : IUsbTransport
+    public class HidUsbTransport : IUsbTransport
     {
-        private IntPtr _handle;
-        private const uint IOCTL_SEND = 0x00000102;  // 258 decimal
-        private const uint IOCTL_RECV = 0x00000103;  // 259 decimal (assumed)
+        private FileStream _stream;
 
-        // HP Prime USB GUID - may need adjustment
-        private static readonly Guid HP_PRIME_GUID =
-            new Guid(0x12d1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); // placeholder
+        // Windows HID Class GUID
+        private static readonly Guid GUID_DEVINTERFACE_HID = new Guid("4D1E55B2-F16F-11CF-88CB-001111000030");
 
-        [DllImport("kernel32.dll", SetLastError = true)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         static extern IntPtr CreateFileW(
-            [MarshalAs(UnmanagedType.LPWStr)] string lpFileName,
-            uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes,
-            uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        static extern bool DeviceIoControl(
-            IntPtr hDevice, uint dwIoControlCode,
-            byte[] lpInBuffer, uint nInBufferSize,
-            byte[] lpOutBuffer, uint nOutBufferSize,
-            out uint lpBytesReturned, IntPtr lpOverlapped);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        static extern bool CloseHandle(IntPtr hObject);
+            string lpFileName, uint dwDesiredAccess, uint dwShareMode, 
+            IntPtr lpSecurityAttributes, uint dwCreationDisposition, 
+            uint dwFlagsAndAttributes, IntPtr hTemplateFile);
 
         [DllImport("setupapi.dll", SetLastError = true)]
         static extern IntPtr SetupDiGetClassDevs(
@@ -183,35 +169,52 @@ namespace HpPrimeUsb
 
         const uint DIGCF_PRESENT = 0x02;
         const uint DIGCF_DEVICEINTERFACE = 0x10;
+        
         const uint GENERIC_READ = 0x80000000;
         const uint GENERIC_WRITE = 0x40000000;
+        const uint FILE_SHARE_READ = 0x00000001;
+        const uint FILE_SHARE_WRITE = 0x00000002;
         const uint OPEN_EXISTING = 3;
+        const uint FILE_FLAG_OVERLAPPED = 0x40000000; // Require for async / timeouts
 
-        public WinUsbTransport(string devicePath = null)
+        public HidUsbTransport(string devicePath = null)
         {
             if (devicePath == null)
+            {
                 devicePath = FindHpPrimeDevice();
+                if (devicePath != null)
+                {
+                    Console.WriteLine($"[HID] Found HP Prime: {devicePath}");
+                }
+            }
 
             if (devicePath == null)
-                throw new InvalidOperationException("HP Prime not found");
+                throw new InvalidOperationException("HP Prime (HID) not found. Is it plugged in and not exclusively used by official HP software?");
 
-            _handle = CreateFileW(devicePath,
-                GENERIC_READ | GENERIC_WRITE, 0, IntPtr.Zero,
-                OPEN_EXISTING, 0, IntPtr.Zero);
+            IntPtr handle = CreateFileW(devicePath,
+                GENERIC_READ | GENERIC_WRITE, 
+                FILE_SHARE_READ | FILE_SHARE_WRITE, 
+                IntPtr.Zero,
+                OPEN_EXISTING, 
+                FILE_FLAG_OVERLAPPED, // Overlapped is necessary for FileStream Async
+                IntPtr.Zero);
 
-            if (_handle == (IntPtr)(-1))
-                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            if (handle == (IntPtr)(-1))
+            {
+                int err = Marshal.GetLastWin32Error();
+                if (err == 32) throw new IOException("Device is already in use by another program (e.g., HP Connectivity Kit). Please close it first.");
+                throw new System.ComponentModel.Win32Exception(err);
+            }
+
+            // Wrap the raw handle in a SafeFileHandle and use FileStream for easy async read/write
+            var safeHandle = new SafeFileHandle(handle, true);
+            _stream = new FileStream(safeHandle, FileAccess.ReadWrite, 65, isAsync: true);
         }
 
         private string FindHpPrimeDevice()
         {
-            // Search for HP Prime USB device
-            // VID=0x03F0 (HP), PID varies by firmware
-            // This is a simplified search - real implementation would enumerate
-            // all USB devices and match VID/PID
-            var guid = HP_PRIME_GUID;
-            var devInfo = SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero,
-                DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
+            var guid = GUID_DEVINTERFACE_HID;
+            var devInfo = SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero, DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
 
             if (devInfo == (IntPtr)(-1)) return null;
 
@@ -219,28 +222,34 @@ namespace HpPrimeUsb
             {
                 var ifData = new SP_DEVICE_INTERFACE_DATA();
                 ifData.cbSize = (uint)Marshal.SizeOf(ifData);
+                uint memberIndex = 0;
 
-                if (!SetupDiEnumDeviceInterfaces(devInfo, IntPtr.Zero, ref guid, 0, ref ifData))
-                    return null;
-
-                SetupDiGetDeviceInterfaceDetail(devInfo, ref ifData, IntPtr.Zero, 0,
-                    out uint requiredSize, IntPtr.Zero);
-
-                IntPtr detailData = Marshal.AllocHGlobal((int)requiredSize);
-                try
+                while (SetupDiEnumDeviceInterfaces(devInfo, IntPtr.Zero, ref guid, memberIndex, ref ifData))
                 {
-                    // Set cbSize for the detail struct (varies by arch)
-                    Marshal.WriteInt32(detailData, IntPtr.Size == 8 ? 8 : 5);
+                    SetupDiGetDeviceInterfaceDetail(devInfo, ref ifData, IntPtr.Zero, 0, out uint requiredSize, IntPtr.Zero);
 
-                    if (SetupDiGetDeviceInterfaceDetail(devInfo, ref ifData, detailData,
-                        requiredSize, out _, IntPtr.Zero))
+                    IntPtr detailData = Marshal.AllocHGlobal((int)requiredSize);
+                    try
                     {
-                        return Marshal.PtrToStringUni(detailData + 4);
+                        Marshal.WriteInt32(detailData, IntPtr.Size == 8 ? 8 : 5); // cbSize varies by arch
+
+                        if (SetupDiGetDeviceInterfaceDetail(devInfo, ref ifData, detailData, requiredSize, out _, IntPtr.Zero))
+                        {
+                            string path = Marshal.PtrToStringUni(detailData + 4);
+                            
+                            // Auto matching HP Prime VID=03F0, PID=1541 (or 2441 for G2)
+                            string lowerPath = path.ToLower();
+                            if (lowerPath.Contains("vid_03f0") && (lowerPath.Contains("pid_1541") || lowerPath.Contains("pid_2441")))
+                            {
+                                return path;
+                            }
+                        }
                     }
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(detailData);
+                    finally
+                    {
+                        Marshal.FreeHGlobal(detailData);
+                    }
+                    memberIndex++;
                 }
             }
             finally
@@ -256,41 +265,48 @@ namespace HpPrimeUsb
             if (packet64.Length != 64)
                 throw new ArgumentException("Packet must be 64 bytes");
 
-            for (int retry = 0; retry < 5; retry++)
-            {
-                if (DeviceIoControl(_handle, IOCTL_SEND, packet64, 64,
-                    null, 0, out _, IntPtr.Zero))
-                    return;
+            // HID packets usually require a 1-byte Report ID at the beginning.
+            // If the device does not explicitly use named Report IDs, Windows defaults to 0.
+            byte[] hidBuffer = new byte[65];
+            hidBuffer[0] = 0x00; // Report ID 0
+            Array.Copy(packet64, 0, hidBuffer, 1, 64);
 
-                Thread.Sleep(1);
-            }
-            throw new IOException("Failed to send USB packet after 5 retries");
+            // Using synchronous WriteAsync to wait is fine for sending
+            _stream.WriteAsync(hidBuffer, 0, 65).GetAwaiter().GetResult();
         }
 
         public byte[] Receive(int timeoutMs = 5000)
         {
-            byte[] result = new byte[64];
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-
-            while (sw.ElapsedMilliseconds < timeoutMs)
+            byte[] hidBuffer = new byte[65];
+            
+            using var cts = new CancellationTokenSource(timeoutMs);
+            try
             {
-                if (DeviceIoControl(_handle, IOCTL_RECV, null, 0,
-                    result, 64, out uint bytesReturned, IntPtr.Zero))
+                int bytesRead = _stream.ReadAsync(hidBuffer, 0, 65, cts.Token).GetAwaiter().GetResult();
+                
+                if (bytesRead >= 64)
                 {
-                    if (bytesReturned >= 64)
-                        return result;
+                    byte[] result = new byte[64];
+                    // Windows ReadFile from HID returns the Report ID as the first byte. 
+                    // So we skip byte 0 and take the next 64 bytes.
+                    int offset = (bytesRead == 65) ? 1 : 0;
+                    Array.Copy(hidBuffer, offset, result, 0, 64);
+                    return result;
                 }
-                Thread.Sleep(1);
+                throw new IOException($"Received unexpected HID packet size: {bytesRead}");
             }
-            throw new TimeoutException($"USB receive timed out after {timeoutMs}ms");
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException($"USB receive timed out after {timeoutMs}ms");
+            }
         }
 
         public void Dispose()
         {
-            if (_handle != IntPtr.Zero && _handle != (IntPtr)(-1))
+            if (_stream != null)
             {
-                CloseHandle(_handle);
-                _handle = IntPtr.Zero;
+                _stream.Dispose();
+                _stream = null;
             }
         }
     }
@@ -304,10 +320,6 @@ namespace HpPrimeUsb
         private readonly Stream _recvStream;
         private readonly bool _isServer;
 
-        /// <summary>
-        /// Create a pipe transport. If isServer=true, creates named pipe servers.
-        /// If isServer=false, connects to existing pipes.
-        /// </summary>
         public PipeTransport(string pipeName = "primu", bool isServer = false)
         {
             _isServer = isServer;
@@ -316,14 +328,10 @@ namespace HpPrimeUsb
 
             if (isServer)
             {
-                // Server side (simulates the device)
-                var sendServer = new NamedPipeServerStream(recvPipe,
-                    PipeDirection.Out, 1, PipeTransmissionMode.Byte);
-                var recvServer = new NamedPipeServerStream(sendPipe,
-                    PipeDirection.In, 1, PipeTransmissionMode.Byte);
+                var sendServer = new NamedPipeServerStream(recvPipe, PipeDirection.Out, 1, PipeTransmissionMode.Byte);
+                var recvServer = new NamedPipeServerStream(sendPipe, PipeDirection.In, 1, PipeTransmissionMode.Byte);
 
                 Console.WriteLine("Pipe server waiting for connections...");
-                // Accept connections (order matters - must match client)
                 Task.WaitAll(
                     Task.Run(() => recvServer.WaitForConnection()),
                     Task.Run(() => sendServer.WaitForConnection())
@@ -335,9 +343,7 @@ namespace HpPrimeUsb
             }
             else
             {
-                var recvClient = new NamedPipeClientStream(".", recvPipe,
-                    PipeDirection.InOut);
-
+                var recvClient = new NamedPipeClientStream(".", recvPipe, PipeDirection.InOut);
                 recvClient.Connect(5000);
                 _recvStream = recvClient;
             }
@@ -356,7 +362,6 @@ namespace HpPrimeUsb
             byte[] buf = new byte[64];
             int totalRead = 0;
 
-            // Set up a cancellation for timeout
             using var cts = new CancellationTokenSource(timeoutMs);
 
             while (totalRead < 64)
@@ -405,20 +410,6 @@ namespace HpPrimeUsb
             }
         }
 
-        private UsbPacket SendRaw(UsbPacket pkt)
-        {
-            _transport.Send(pkt.ToBytes());
-            return default;
-        }
-
-        private UsbPacket ReceiveRaw(int timeoutMs = 5000)
-        {
-            return UsbPacket.FromBytes(_transport.Receive(timeoutMs));
-        }
-
-        /// <summary>
-        /// Receive a multi-packet data stream (DATA packets followed by DATA_END)
-        /// </summary>
         private byte[] ReceiveDataStream(int timeoutMs = 10000)
         {
             using var ms = new MemoryStream();
@@ -449,11 +440,6 @@ namespace HpPrimeUsb
             return ms.ToArray();
         }
 
-        // ====================== PUBLIC API ======================
-
-        /// <summary>
-        /// Ping the device, returns true if alive
-        /// </summary>
         public bool Ping()
         {
             lock (_lock)
@@ -478,9 +464,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Read a file from the device
-        /// </summary>
         public byte[] ReadFile(string remotePath, uint offset = 0, uint maxLen = 0)
         {
             lock (_lock)
@@ -488,7 +471,6 @@ namespace HpPrimeUsb
                 byte seq = NextSeq();
                 var pkt = UsbPacket.Create(UsbProto.CMD_READ_FILE, seq);
 
-                // Pack: [offset:4][maxLen:4][path:ascii]
                 BitConverter.GetBytes(offset).CopyTo(pkt.Data, 0);
                 BitConverter.GetBytes(maxLen).CopyTo(pkt.Data, 4);
 
@@ -499,7 +481,6 @@ namespace HpPrimeUsb
 
                 _transport.Send(pkt.ToBytes());
 
-                // Expect RSP_OK with file info
                 var rsp = UsbPacket.FromBytes(_transport.Receive(5000));
                 if (rsp.Cmd == UsbProto.RSP_ERROR)
                     throw new FileNotFoundException($"Error 0x{rsp.Data[0]:X2}: {remotePath}");
@@ -510,15 +491,10 @@ namespace HpPrimeUsb
                 uint readLen = rsp.PayloadLen >= 8 ? BitConverter.ToUInt32(rsp.Data, 4) : fileSize;
 
                 Console.WriteLine($"File size: {fileSize}, reading: {readLen}");
-
-                // Now receive data stream
                 return ReceiveDataStream(30000);
             }
         }
 
-        /// <summary>
-        /// Write a file to the device
-        /// </summary>
         public void WriteFile(string remotePath, byte[] data)
         {
             lock (_lock)
@@ -528,7 +504,6 @@ namespace HpPrimeUsb
 
                 byte seq = NextSeq();
 
-                // 1. Send initial command with path and size
                 var pkt = UsbPacket.Create(UsbProto.CMD_WRITE_FILE, seq);
                 BitConverter.GetBytes((uint)data.Length).CopyTo(pkt.Data, 0);
 
@@ -539,14 +514,12 @@ namespace HpPrimeUsb
 
                 _transport.Send(pkt.ToBytes());
 
-                // Wait for ACK
                 var rsp = UsbPacket.FromBytes(_transport.Receive(5000));
                 if (rsp.Cmd == UsbProto.RSP_ERROR)
                     throw new IOException($"Write setup failed: 0x{rsp.Data[0]:X2}");
                 if (rsp.Cmd != UsbProto.RSP_OK)
                     throw new IOException($"Unexpected: 0x{rsp.Cmd:X2}");
 
-                // 2. Stream data in 60-byte chunks
                 int offset = 0;
                 while (offset < data.Length)
                 {
@@ -557,17 +530,13 @@ namespace HpPrimeUsb
                     _transport.Send(dataPkt.ToBytes());
                     offset += chunk;
 
-                    // Small delay to avoid overwhelming the device
-                    if (offset % (60 * 100) == 0)
-                        Thread.Sleep(1);
+                    if (offset % (60 * 100) == 0) Thread.Sleep(1);
                 }
 
-                // 3. Send end marker (empty payload)
                 var endPkt = UsbPacket.Create(UsbProto.CMD_WRITE_FILE, seq);
                 endPkt.PayloadLen = 0;
                 _transport.Send(endPkt.ToBytes());
 
-                // 4. Wait for final ACK
                 rsp = UsbPacket.FromBytes(_transport.Receive(10000));
                 if (rsp.Cmd != UsbProto.RSP_OK)
                     throw new IOException($"Write failed: 0x{rsp.Cmd:X2}");
@@ -577,9 +546,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// List directory contents
-        /// </summary>
         public DirEntryInfo[] ListDirectory(string pattern)
         {
             lock (_lock)
@@ -629,9 +595,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Delete a file on the device
-        /// </summary>
         public void DeleteFile(string remotePath)
         {
             lock (_lock)
@@ -648,9 +611,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Create a directory on the device
-        /// </summary>
         public void MakeDirectory(string remotePath)
         {
             lock (_lock)
@@ -667,9 +627,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Get file size/info
-        /// </summary>
         public uint GetFileSize(string remotePath)
         {
             lock (_lock)
@@ -687,9 +644,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Read raw memory from device
-        /// </summary>
         public byte[] ReadMemory(uint address, uint length)
         {
             lock (_lock)
@@ -710,22 +664,17 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Write raw memory on device
-        /// </summary>
         public void WriteMemory(uint address, byte[] data)
         {
             lock (_lock)
             {
                 byte seq = NextSeq();
 
-                // Initial packet with address and length
                 var pkt = UsbPacket.Create(UsbProto.CMD_WRITE_MEM, seq);
                 BitConverter.GetBytes(address).CopyTo(pkt.Data, 0);
                 BitConverter.GetBytes((uint)data.Length).CopyTo(pkt.Data, 4);
 
-                // Include as much inline data as possible
-                int inlineLen = Math.Min(data.Length, 52); // 60 - 8 header bytes
+                int inlineLen = Math.Min(data.Length, 52); 
                 if (inlineLen > 0)
                     Array.Copy(data, 0, pkt.Data, 8, inlineLen);
                 pkt.PayloadLen = (ushort)(8 + inlineLen);
@@ -736,7 +685,6 @@ namespace HpPrimeUsb
                 if (rsp.Cmd != UsbProto.RSP_OK)
                     throw new IOException($"WriteMem setup failed: 0x{rsp.Cmd:X2}");
 
-                // Send remaining data
                 int offset = inlineLen;
                 while (offset < data.Length)
                 {
@@ -748,7 +696,6 @@ namespace HpPrimeUsb
                     offset += chunk;
                 }
 
-                // End marker
                 var endPkt = UsbPacket.Create(UsbProto.CMD_WRITE_MEM, seq);
                 endPkt.PayloadLen = 0;
                 _transport.Send(endPkt.ToBytes());
@@ -759,9 +706,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Read the debug log ring buffer
-        /// </summary>
         public string ReadLog()
         {
             lock (_lock)
@@ -782,9 +726,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Inject a key event
-        /// </summary>
         public void InjectKey(byte doomKey, bool isDown)
         {
             lock (_lock)
@@ -792,15 +733,12 @@ namespace HpPrimeUsb
                 var pkt = UsbPacket.Create(UsbProto.CMD_KEY_INJECT, NextSeq());
                 pkt.Data[0] = doomKey;
                 pkt.Data[1] = (byte)(isDown ? 1 : 0);
-                pkt.Data[2] = 0; // not mouse
+                pkt.Data[2] = 0;
                 pkt.PayloadLen = 3;
                 SendAndReceive(pkt);
             }
         }
 
-        /// <summary>
-        /// Inject a mouse move event
-        /// </summary>
         public void InjectMouseMove(short dx, short dy)
         {
             lock (_lock)
@@ -808,7 +746,7 @@ namespace HpPrimeUsb
                 var pkt = UsbPacket.Create(UsbProto.CMD_KEY_INJECT, NextSeq());
                 pkt.Data[0] = 0;
                 pkt.Data[1] = 0;
-                pkt.Data[2] = 1; // is mouse
+                pkt.Data[2] = 1;
                 BitConverter.GetBytes(dx).CopyTo(pkt.Data, 3);
                 BitConverter.GetBytes(dy).CopyTo(pkt.Data, 5);
                 pkt.PayloadLen = 7;
@@ -816,9 +754,6 @@ namespace HpPrimeUsb
             }
         }
 
-        /// <summary>
-        /// Upload a local file to the device
-        /// </summary>
         public void UploadFile(string localPath, string remotePath)
         {
             byte[] data = File.ReadAllBytes(localPath);
@@ -826,9 +761,6 @@ namespace HpPrimeUsb
             WriteFile(remotePath, data);
         }
 
-        /// <summary>
-        /// Download a file from device to local path
-        /// </summary>
         public void DownloadFile(string remotePath, string localPath)
         {
             Console.WriteLine($"Downloading {remotePath} -> {localPath}");
@@ -847,10 +779,6 @@ namespace HpPrimeUsb
 
     #region CLI / Debug Stub
 
-    /// <summary>
-    /// Simple pipe-based debug stub that simulates the device side
-    /// for testing without hardware.
-    /// </summary>
     public class DebugStub : IDisposable
     {
         private readonly PipeTransport _transport;
@@ -876,10 +804,7 @@ namespace HpPrimeUsb
                     var pkt = UsbPacket.FromBytes(raw);
                     HandlePacket(pkt);
                 }
-                catch (TimeoutException)
-                {
-                    // Just continue
-                }
+                catch (TimeoutException) { }
                 catch (IOException ex)
                 {
                     Console.WriteLine($"Stub IO error: {ex.Message}");
@@ -903,26 +828,12 @@ namespace HpPrimeUsb
                         _transport.Send(rsp.ToBytes());
                     }
                     break;
-
-                case UsbProto.CMD_READ_FILE:
-                    StubReadFile(pkt);
-                    break;
-
-                case UsbProto.CMD_WRITE_FILE:
-                    StubWriteFile(pkt);
-                    break;
-
-                case UsbProto.CMD_LIST_DIR:
-                    StubListDir(pkt);
-                    break;
-
-                case UsbProto.CMD_FILE_INFO:
-                    StubFileInfo(pkt);
-                    break;
-
+                case UsbProto.CMD_READ_FILE: StubReadFile(pkt); break;
+                case UsbProto.CMD_WRITE_FILE: StubWriteFile(pkt); break;
+                case UsbProto.CMD_LIST_DIR: StubListDir(pkt); break;
+                case UsbProto.CMD_FILE_INFO: StubFileInfo(pkt); break;
                 case UsbProto.CMD_LOG_READ:
                     {
-                        // Return a fake log
                         string log = "[STUB] Hello from debug stub!\n";
                         byte[] logData = Encoding.ASCII.GetBytes(log);
 
@@ -931,7 +842,6 @@ namespace HpPrimeUsb
                         okPkt.PayloadLen = 4;
                         _transport.Send(okPkt.ToBytes());
 
-                        // Stream log data
                         int offset = 0;
                         while (offset < logData.Length)
                         {
@@ -947,7 +857,6 @@ namespace HpPrimeUsb
                         _transport.Send(endPkt.ToBytes());
                     }
                     break;
-
                 default:
                     {
                         var rsp = UsbPacket.Create(UsbProto.RSP_ERROR, pkt.Seq);
@@ -981,14 +890,12 @@ namespace HpPrimeUsb
             uint fileSize = (uint)fileData.Length;
             uint readLen = maxLen == 0 ? fileSize - offset : Math.Min(maxLen, fileSize - offset);
 
-            // Send OK
             var ok = UsbPacket.Create(UsbProto.RSP_OK, pkt.Seq);
             BitConverter.GetBytes(fileSize).CopyTo(ok.Data, 0);
             BitConverter.GetBytes(readLen).CopyTo(ok.Data, 4);
             ok.PayloadLen = 8;
             _transport.Send(ok.ToBytes());
 
-            // Stream data
             int pos = (int)offset;
             int remaining = (int)readLen;
             while (remaining > 0)
@@ -1014,31 +921,24 @@ namespace HpPrimeUsb
 
             Console.WriteLine($"Stub WRITE: {path} ({totalSize} bytes) -> {localPath}");
 
-            // Ensure directory exists
             string dir = Path.GetDirectoryName(localPath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            // ACK
             var ok = UsbPacket.Create(UsbProto.RSP_OK, pkt.Seq);
             ok.Data[0] = UsbProto.ERR_NONE;
             ok.PayloadLen = 1;
             _transport.Send(ok.ToBytes());
 
-            // Receive data
             using var ms = new MemoryStream();
             while (ms.Length < totalSize)
             {
                 var dataPkt = UsbPacket.FromBytes(_transport.Receive(10000));
-                if (dataPkt.Cmd == UsbProto.CMD_WRITE_FILE && dataPkt.PayloadLen == 0)
-                    break;
-                if (dataPkt.PayloadLen > 0)
-                    ms.Write(dataPkt.Data, 0, dataPkt.PayloadLen);
+                if (dataPkt.Cmd == UsbProto.CMD_WRITE_FILE && dataPkt.PayloadLen == 0) break;
+                if (dataPkt.PayloadLen > 0) ms.Write(dataPkt.Data, 0, dataPkt.PayloadLen);
             }
 
             File.WriteAllBytes(localPath, ms.ToArray());
 
-            // Final ACK
             var done = UsbPacket.Create(UsbProto.RSP_OK, pkt.Seq);
             BitConverter.GetBytes((uint)ms.Length).CopyTo(done.Data, 0);
             done.PayloadLen = 4;
@@ -1107,9 +1007,6 @@ namespace HpPrimeUsb
         }
     }
 
-    /// <summary>
-    /// Command-line interface
-    /// </summary>
     public class Program
     {
         static void Main(string[] args)
@@ -1124,14 +1021,12 @@ namespace HpPrimeUsb
 
             if (mode == "stub")
             {
-                // Run as debug stub (simulated device)
                 string rootDir = args.Length > 1 ? args[1] : ".";
                 using var stub = new DebugStub(simulatedRootDir: rootDir);
                 stub.Run();
                 return;
             }
 
-            // Determine transport
             IUsbTransport transport;
             bool usePipe = args.Any(a => a == "--pipe");
 
@@ -1141,13 +1036,14 @@ namespace HpPrimeUsb
             }
             else
             {
+                // Removed the old WinUsbTransport requirement
+                // HID auto-discovery is now the default
                 string devicePath = args.FirstOrDefault(a => a.StartsWith("--dev="))?.Substring(6);
-                transport = new WinUsbTransport(devicePath);
+                transport = new HidUsbTransport(devicePath); 
             }
 
             using var client = new HpPrimeClient(transport);
 
-            // Remove transport flags from args for command parsing
             args = args.Where(a => a != "--pipe" && !a.StartsWith("--dev=")).ToArray();
 
             try
@@ -1158,50 +1054,41 @@ namespace HpPrimeUsb
                         bool alive = client.Ping();
                         Console.WriteLine(alive ? "Device is alive!" : "No response.");
                         break;
-
                     case "ls":
                         if (args.Length < 2) { Console.WriteLine("Usage: ls <pattern>"); break; }
                         var entries = client.ListDirectory(args[1]);
-                        foreach (var e in entries)
-                            Console.WriteLine(e);
+                        foreach (var e in entries) Console.WriteLine(e);
                         Console.WriteLine($"\n{entries.Length} entries");
                         break;
-
                     case "get":
                         if (args.Length < 3) { Console.WriteLine("Usage: get <remote> <local>"); break; }
                         client.DownloadFile(args[1], args[2]);
                         break;
-
                     case "put":
                         if (args.Length < 3) { Console.WriteLine("Usage: put <local> <remote>"); break; }
                         client.UploadFile(args[1], args[2]);
                         break;
-
                     case "rm":
                         if (args.Length < 2) { Console.WriteLine("Usage: rm <remote>"); break; }
                         client.DeleteFile(args[1]);
                         Console.WriteLine("Deleted.");
                         break;
-
                     case "mkdir":
                         if (args.Length < 2) { Console.WriteLine("Usage: mkdir <remote>"); break; }
                         client.MakeDirectory(args[1]);
                         Console.WriteLine("Created.");
                         break;
-
                     case "info":
                         if (args.Length < 2) { Console.WriteLine("Usage: info <remote>"); break; }
                         uint size = client.GetFileSize(args[1]);
                         Console.WriteLine($"Size: {size} bytes");
                         break;
-
                     case "log":
                         string log = client.ReadLog();
                         Console.WriteLine("=== Device Log ===");
                         Console.Write(log);
                         Console.WriteLine("=== End Log ===");
                         break;
-
                     case "readmem":
                         if (args.Length < 3) { Console.WriteLine("Usage: readmem <addr> <len> [outfile]"); break; }
                         uint addr = Convert.ToUInt32(args[1], 16);
@@ -1214,7 +1101,6 @@ namespace HpPrimeUsb
                         }
                         else
                         {
-                            // Hex dump
                             for (int i = 0; i < mem.Length; i += 16)
                             {
                                 Console.Write($"{addr + i:X8}: ");
@@ -1224,7 +1110,6 @@ namespace HpPrimeUsb
                             }
                         }
                         break;
-
                     case "writemem":
                         if (args.Length < 3) { Console.WriteLine("Usage: writemem <addr> <file>"); break; }
                         uint waddr = Convert.ToUInt32(args[1], 16);
@@ -1232,20 +1117,14 @@ namespace HpPrimeUsb
                         client.WriteMemory(waddr, wdata);
                         Console.WriteLine($"Wrote {wdata.Length} bytes to 0x{waddr:X8}");
                         break;
-
                     case "monitor":
-                        // Continuously poll and display log
                         Console.WriteLine("Monitoring log (Ctrl+C to stop)...");
                         while (true)
                         {
                             string logText = client.ReadLog();
-                            if (!string.IsNullOrEmpty(logText))
-                            {
-                                Console.Write(logText);
-                            }
+                            if (!string.IsNullOrEmpty(logText)) Console.Write(logText);
                             Thread.Sleep(500);
                         }
-
                     default:
                         PrintUsage();
                         break;
@@ -1261,13 +1140,9 @@ namespace HpPrimeUsb
         static void PrintUsage()
         {
             Console.WriteLine(@"
-HP Prime DOOM USB Tool
-======================
-Usage: hpprime <command> [options]
-
-Transport options:
-  --pipe          Use named pipe transport (for testing with stub)
-  --dev=<path>    Specify USB device path
+HP Prime USB Tool (HID Native Version)
+===========================================
+Usage: QuickTransfer.exe <command> [options]
 
 Commands:
   ping                          Test connectivity
@@ -1277,20 +1152,6 @@ Commands:
   rm <remote>                   Delete file
   mkdir <remote>                Create directory
   info <remote>                 Get file info
-  log                           Read debug log
-  readmem <addr> <len> [file]   Read device memory (hex addresses)
-  writemem <addr> <file>        Write file to device memory
-  monitor                       Continuously display debug log
-
-Debug stub:
-  stub [rootdir]                Run as simulated device (pipe server)
-
-Examples:
-  hpprime --pipe stub ./testroot     # Terminal 1: start stub
-  hpprime --pipe ping                # Terminal 2: test connection
-  hpprime --pipe ls ""/*""              
-  hpprime --pipe put doom1.wad /doom1.wad
-  hpprime --pipe get /doom1.wad local_copy.wad
 ");
         }
     }
